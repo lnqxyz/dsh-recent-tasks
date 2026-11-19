@@ -69,15 +69,11 @@ window.__ModuleLoader__.load({
       'section.fav': '收藏',
       'section.unread': '未读',
       'section.done': '已完成',
-      'section.emptyRunning': '当前没有正在运行的对话',
-      'section.emptyRunningFav': '正在运行的对话都在收藏里',
       'section.pendingChip': '待你处理 {n}',
       'pending.approval': '等你确认',
       'pending.planReview': '等你定方案',
       'pending.question': '等你回答',
       'pending.other': '等你处理',
-      'section.emptyUnread': '没有未读的对话',
-      'section.emptyDone': '还没有已完成的对话',
       'star.add': '收藏这个对话',
       'star.remove': '取消收藏',
       'row.unknownWorkspace': '未记录工作区',
@@ -113,15 +109,11 @@ window.__ModuleLoader__.load({
       'section.fav': 'Favorites',
       'section.unread': 'Unread',
       'section.done': 'Completed',
-      'section.emptyRunning': 'Nothing is running right now',
-      'section.emptyRunningFav': 'Everything running is in favorites',
       'section.pendingChip': '{n} waiting on you',
       'pending.approval': 'Needs approval',
       'pending.planReview': 'Review the plan',
       'pending.question': 'Answer needed',
       'pending.other': 'Needs you',
-      'section.emptyUnread': 'Nothing unread',
-      'section.emptyDone': 'Nothing completed yet',
       'star.add': 'Star this session',
       'star.remove': 'Remove from favorites',
       'row.unknownWorkspace': 'Workspace not recorded',
@@ -169,10 +161,12 @@ window.__ModuleLoader__.load({
       '.drt-sectionUnread{flex:none;min-height:0;border-top:1px solid var(--dsw-alias-border-l1);padding-top:14px}',
       '.drt-sectionDone{flex:1;min-height:0;border-top:1px solid var(--dsw-alias-border-l1);padding-top:14px}',
       '.drt-sectionFav{flex:none;min-height:0;border-top:1px solid var(--dsw-alias-border-l1);padding-top:14px}',
+      // Bands close up when one is missing: whatever ends up on top must not
+      // start with a divider drawn for a neighbour that is no longer there.
+      '.drt-body > .drt-section:first-child{border-top:0;padding-top:0}',
       '.drt-headDot.is-unread{background:var(--drt-unread-dot);opacity:1;animation:none}',
       '.drt-headDot.is-fav{background:var(--dsw-alias-state-warn-primary);opacity:1;animation:none}',
       '.drt-sectionHead{flex:none;display:flex;align-items:center;gap:7px;min-width:0}',
-      '.drt-headHint{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;color:var(--dsw-alias-label-tertiary)}',
       '.drt-headDot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--drt-run);animation:drt-breathe 1.8s ease-in-out infinite}',
       '.drt-headDot.is-idle{background:var(--dsw-alias-label-tertiary);opacity:.45;animation:none}',
       '.drt-headDot.is-pending{background:var(--dsw-alias-state-error-primary);opacity:1;animation:drt-pause 2.6s ease-in-out infinite}',
@@ -225,7 +219,6 @@ window.__ModuleLoader__.load({
       '.drt-cardWorkspace{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.drt-cardSep{flex:none;opacity:.6}',
       '.drt-cardTime{flex:none;white-space:nowrap;font-variant-numeric:tabular-nums}',
-      '.drt-section .drt-empty{padding:2px 1px 0;font-size:12px}',
       '@keyframes drt-breathe{0%,100%{opacity:1}50%{opacity:.45}}',
       '@keyframes drt-pause{0%,100%{opacity:1}50%{opacity:.32}}',
       // 200% wide, two identical periods: running 0→100% loops without a seam.
@@ -817,9 +810,6 @@ window.__ModuleLoader__.load({
       // matters, and no journal is read to find out.
       const unreadRows = restRows.filter(row => !row.running && row.unread === true && row.recent !== false)
       const doneRows = restRows.filter(row => !row.running && row.unread !== true && row.recent !== false)
-      // A running session that lives in 收藏 is still running; the band keeps
-      // its live dot and says where the row went instead of claiming idle.
-      const runningFavored = rows.filter(row => row.favorite === true && row.running).length
       const visible = doneRows.slice(0, shown)
       const remaining = doneRows.length - shown
 
@@ -1073,27 +1063,25 @@ window.__ModuleLoader__.load({
         )
       }
 
-      const runningSection = h('section', { className: 'drt-section' },
-        h('div', { className: 'drt-sectionHead' },
-          h('span', {
-            className: 'drt-headDot'
-              + (runningRows.length === 0 && runningFavored === 0 ? ' is-idle' : '')
-              + (runningRows.length > 0 && liveRows.length === 0 ? ' is-pending' : ''),
-            'aria-hidden': 'true',
-          }),
-          h('span', { className: 'drt-zoneLabel' }, t('section.running')),
-          h('span', { className: 'drt-count' }, runningRows.length),
-          pendingRows.length === 0
-            ? null
-            : h('span', { className: 'drt-chip' }, t('section.pendingChip', { n: pendingRows.length })),
-          runningRows.length === 0
-            ? h('span', { className: 'drt-headHint' }, t(runningFavored > 0 ? 'section.emptyRunningFav' : 'section.emptyRunning'))
-            : null,
-        ),
-        runningRows.length === 0
-          ? null
-          : h('div', { className: 'drt-cardGrid is-running' }, pendingRows.concat(liveRows).map(row => card(row, 'running'))),
-      )
+      // Every band is drawn only while it holds a card: an empty band keeps a
+      // header and a "nothing here" line on screen, which reads as if its
+      // sessions had gone missing. A band that is not drawn leaves no gap.
+      const runningSection = runningRows.length === 0
+        ? null
+        : h('section', { className: 'drt-section drt-sectionRunning' },
+          h('div', { className: 'drt-sectionHead' },
+            h('span', {
+              className: 'drt-headDot' + (liveRows.length === 0 ? ' is-pending' : ''),
+              'aria-hidden': 'true',
+            }),
+            h('span', { className: 'drt-zoneLabel' }, t('section.running')),
+            h('span', { className: 'drt-count' }, runningRows.length),
+            pendingRows.length === 0
+              ? null
+              : h('span', { className: 'drt-chip' }, t('section.pendingChip', { n: pendingRows.length })),
+          ),
+          h('div', { className: 'drt-cardGrid is-running' }, pendingRows.concat(liveRows).map(row => card(row, 'running'))),
+        )
 
       // 收藏 sits directly under the running band: a star lands there first.
       // It only takes room while it holds something — an empty band wedged
@@ -1120,21 +1108,17 @@ window.__ModuleLoader__.load({
           h('div', { className: 'drt-cardGrid is-unread' }, unreadRows.map(row => card(row, 'unread'))),
         )
 
-      // 已完成 keeps a placeholder band while the page would otherwise look
-      // empty — but not when 收藏 is what holds the rows: a "0 completed" line
-      // next to a full 收藏 would read as if they had gone missing.
-      const showDone = doneRows.length > 0 || (unreadRows.length === 0 && favoriteRows.length === 0)
-      const doneSection = showDone ? h('section', { className: 'drt-section drt-sectionDone' },
-        h('div', { className: 'drt-sectionHead' },
-          h('span', { className: 'drt-headDot is-idle', 'aria-hidden': 'true' }),
-          h('span', { className: 'drt-zoneLabel' }, t('section.done')),
-          h('span', { className: 'drt-count' }, doneRows.length),
-        ),
-        doneRows.length === 0
-          ? h('p', { className: 'drt-empty' }, t('section.emptyDone'))
-          : h('div', { className: 'drt-cardGrid is-done' }, visible.map(row => card(row, 'done'))),
-        foot,
-      ) : null
+      const doneSection = doneRows.length === 0
+        ? null
+        : h('section', { className: 'drt-section drt-sectionDone' },
+          h('div', { className: 'drt-sectionHead' },
+            h('span', { className: 'drt-headDot is-idle', 'aria-hidden': 'true' }),
+            h('span', { className: 'drt-zoneLabel' }, t('section.done')),
+            h('span', { className: 'drt-count' }, doneRows.length),
+          ),
+          h('div', { className: 'drt-cardGrid is-done' }, visible.map(row => card(row, 'done'))),
+          foot,
+        )
 
       let body = null
       if (listState === undefined || (listState && listState.phase === 'pending' && rows.length === 0)) {

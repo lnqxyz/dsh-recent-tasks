@@ -499,22 +499,18 @@ const harness = String.raw`
       favoriteTitles() { return Array.from(container.querySelectorAll('.drt-card.is-fav .drt-cardTitle')).map(el => el.textContent) },
       counts() { return Array.from(container.querySelectorAll('.drt-count')).map(el => el.textContent) },
       zoneCount(zone) {
-        const el = container.querySelector('.drt-section' + zone + ' .drt-count')
+        const el = container.querySelector('.drt-section' + (zone === '' ? 'Running' : zone) + ' .drt-count')
         return el ? el.textContent : ''
       },
       pendingCards() { return container.querySelectorAll('.drt-card.is-pending').length },
       pendingLabels() { return Array.from(container.querySelectorAll('.drt-card.is-pending .drt-pill')).map(el => el.textContent) },
       chipText() { const el = container.querySelector('.drt-chip'); return el ? el.textContent : '' },
-      headDotClass() { const el = container.querySelector('.drt-section .drt-headDot'); return el ? el.className : '' },
+      headDotClass() { const el = container.querySelector('.drt-sectionRunning .drt-headDot'); return el ? el.className : '' },
       zoneLabels() { return Array.from(container.querySelectorAll('.drt-zoneLabel')).map(el => el.textContent) },
       liveTitles() { return Array.from(container.querySelectorAll('.drt-card.is-running .drt-cardTitle')).map(el => el.textContent) },
       rowTitles() { return Array.from(container.querySelectorAll('.drt-cardGrid.is-done .drt-cardTitle')).map(el => el.textContent) },
       titleCount(title) {
         return Array.from(container.querySelectorAll('.drt-card .drt-cardTitle')).filter(el => el.textContent === title).length
-      },
-      zoneHint(zone) {
-        const el = container.querySelector('.drt-section' + zone + ' .drt-headHint')
-        return el ? el.textContent : ''
       },
       footText() { const el = container.querySelector('.drt-more'); return el ? el.textContent : '' },
       cardBox() {
@@ -649,7 +645,9 @@ const harness = String.raw`
     check('运行卡标题正确', rt.liveTitles().join('|') === '对话 1|对话 7', rt.liveTitles().join('|'))
     check('运行区计数为 2', rt.zoneCount('') === '2', rt.counts().join('|'))
     check('已完成区计数为 38', rt.zoneCount('Done') === '38', rt.counts().join('|'))
-    check('启动时没有未读区', rt.unreads() === 0 && rt.zoneCount('Unread') === '', rt.counts().join('|'))
+    check('启动时没有未读区',
+      rt.unreads() === 0 && rt.zoneCount('Unread') === '' && !rt.container.querySelector('.drt-sectionUnread'),
+      rt.counts().join('|'))
     check('已完成区启动显示 15 条', rt.rows() === 15, '实际 ' + rt.rows())
     check('已完成区不含运行中的对话', rt.rowTitles().indexOf('对话 1') < 0 && rt.rowTitles().indexOf('对话 7') < 0, rt.rowTitles().join('|'))
     check('底部按钮写明剩余 23', rt.footText() === '展开其余 23 个对话', rt.footText())
@@ -780,11 +778,14 @@ const harness = String.raw`
     check('运行中的会话四区只出现一次', rt.titleCount('对话 1') === 1, String(rt.titleCount('对话 1')))
     click(rt.container.querySelector('.drt-card.is-running .drt-star'))
     await tick()
-    check('两个运行会话都收进收藏后运行区为空', rt.lives() === 0 && rt.favorites() === 2,
+    check('两个运行会话都收进收藏后运行区整块消失',
+      rt.lives() === 0 && rt.favorites() === 2 && !rt.container.querySelector('.drt-sectionRunning'),
       '运行 ' + rt.lives() + ' / 收藏 ' + rt.favorites())
-    check('运行区说明去了收藏', rt.zoneHint('') === '正在运行的对话都在收藏里', rt.zoneHint(''))
-    check('运行区绿灯仍在呼吸', (rt.container.querySelector('.drt-section .drt-headDot') || {}).className.indexOf('is-idle') < 0,
-      String((rt.container.querySelector('.drt-section .drt-headDot') || {}).className))
+    check('运行区消失后收藏排在最上且不带分隔线',
+      !!rt.container.querySelector('.drt-sectionFav')
+        && getComputedStyle(rt.container.querySelector('.drt-sectionFav')).borderTopWidth === '0px'
+        && getComputedStyle(rt.container.querySelector('.drt-sectionFav')).paddingTop === '0px',
+      rt.zoneLabels().join('|'))
     click(rt.container.querySelector('.drt-card.is-fav .drt-star'))
     await tick()
     check('取消收藏后回到运行区', rt.lives() === 1 && rt.favorites() === 1 && rt.liveTitles()[0] === '对话 1',
@@ -900,13 +901,42 @@ const harness = String.raw`
     check('盯着跑完的会话落回已完成', rt.rowTitles()[0] === '对话 1', rt.rowTitles().join('|'))
     rt.unmount()
 
-    // 4. zero running: one muted line, completed list unchanged
+    // 4. an empty band is not drawn at all: no header, no hint, no gap
     localStorage.clear()
     rt = makeRuntime({ running: [] })
-    check('没有运行中时运行区为 0', rt.lives() === 0 && rt.zoneCount('') === '0', rt.counts().join('|'))
-    check('没有运行中时给出说明', rt.text().indexOf('当前没有正在运行的对话') >= 0, rt.text().slice(0, 80))
+    check('没有运行中时运行区整块消失',
+      rt.lives() === 0 && !rt.container.querySelector('.drt-sectionRunning'), rt.zoneLabels().join('|'))
+    check('只剩已完成一个区', rt.zoneLabels().join('|') === '已完成', rt.zoneLabels().join('|'))
+    check('已完成区顶上来时不带多余分隔线',
+      getComputedStyle(rt.container.querySelector('.drt-sectionDone')).borderTopWidth === '0px'
+        && getComputedStyle(rt.container.querySelector('.drt-sectionDone')).paddingTop === '0px',
+      getComputedStyle(rt.container.querySelector('.drt-sectionDone')).borderTopWidth)
     check('没有运行中时已完成计数 40', rt.zoneCount('Done') === '40', rt.counts().join('|'))
     check('没有运行中时仍显示 15 条', rt.rows() === 15, '实际 ' + rt.rows())
+
+    // 4a. no running, one unread: 未读 takes the top and drops its divider
+    localStorage.clear()
+    rt = makeRuntime({ running: [] })
+    rt.finishRun('s02')
+    await tick()
+    check('没有运行中时未读区排在最上', rt.zoneLabels().join('|') === '未读|已完成', rt.zoneLabels().join('|'))
+    check('未读区顶上来时不带多余分隔线',
+      getComputedStyle(rt.container.querySelector('.drt-sectionUnread')).borderTopWidth === '0px'
+        && getComputedStyle(rt.container.querySelector('.drt-sectionUnread')).paddingTop === '0px',
+      getComputedStyle(rt.container.querySelector('.drt-sectionUnread')).borderTopWidth)
+    rt.unmount()
+
+    // 4b. every session running: 已完成 leaves no header and no footer
+    localStorage.clear()
+    const allRunningIds = []
+    for (let index = 0; index < 40; index += 1) allRunningIds.push('s' + String(index + 1).padStart(2, '0'))
+    if (${JSON.stringify(otherId)} !== '') allRunningIds.push(${JSON.stringify(otherId)})
+    rt = makeRuntime({ running: allRunningIds })
+    check('全部在运行时只剩运行区',
+      rt.zoneLabels().join('|') === '正在运行' && rt.lives() > 0, rt.zoneLabels().join('|'))
+    check('没有已完成区时底部收起按钮也不占位',
+      !rt.container.querySelector('.drt-sectionDone') && rt.container.querySelector('.drt-more') === null,
+      rt.footText())
     rt.unmount()
 
     // 5. expand step by step over the completed list
