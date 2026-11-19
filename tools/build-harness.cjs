@@ -720,6 +720,16 @@ const harness = String.raw`
       rt.zoneLabels().join('|'))
     check('每张卡都有星星', rt.container.querySelectorAll('.drt-card .drt-star').length === rt.container.querySelectorAll('.drt-card').length,
       String(rt.container.querySelectorAll('.drt-card .drt-star').length) + ' / ' + String(rt.container.querySelectorAll('.drt-card').length))
+    const bigStar = rt.container.querySelector('.drt-card .drt-star')
+    const bigStarSvg = bigStar.querySelector('svg')
+    const bigStarBox = bigStar.getBoundingClientRect()
+    const bigTitleBox = bigStar.closest('.drt-card').querySelector('.drt-cardTitle').getBoundingClientRect()
+    check('星星图标放大到 18px', Math.round(parseFloat(getComputedStyle(bigStarSvg).width)) === 18,
+      getComputedStyle(bigStarSvg).width)
+    check('星星点击区放大到 30px', Math.round(bigStarBox.width) === 30 && Math.round(bigStarBox.height) === 30,
+      Math.round(bigStarBox.width) + 'x' + Math.round(bigStarBox.height))
+    check('标题让开星星，不压到图标', bigTitleBox.right <= bigStarBox.left,
+      Math.round(bigTitleBox.right) + ' / ' + Math.round(bigStarBox.left))
     const beforeStars = rt.calls.filter(call => call[0] === 'uiWorkspace.openSession').length
     click(rt.container.querySelector('.drt-card.is-unread .drt-star'))
     await tick()
