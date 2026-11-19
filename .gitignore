@@ -1,0 +1,6 @@
+.DS_Store
+*.log
+
+# 自检产物与临时草稿
+临时/
+node_modules/

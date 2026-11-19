@@ -1,0 +1,33 @@
+{
+  "name": "@dsh-local/view-8c716ee6-17d5-46ae-b021-c82f36d0f6c1",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sidebar entry that lists the sessions with activity in the last 10 days and starts a new session in a remembered folder.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
+    }
+  }
+}

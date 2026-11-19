@@ -1,0 +1,1622 @@
+window.__ModuleLoader__.load({
+  id: '@dsh-local/view-8c716ee6-17d5-46ae-b021-c82f36d0f6c1',
+  factory(require) {
+    const React = require('react')
+    const h = React.createElement
+
+    /** Package identity, used for the style tag and data attributes. */
+    const PKG = '@dsh-local/view-8c716ee6-17d5-46ae-b021-c82f36d0f6c1'
+    /** Locale namespace owned by this plugin. */
+    const NS = 'recent-tasks'
+    /** Sidebar entry id and, because both seats address each other by it, the main page key. */
+    const PANEL_ID = 'recent-tasks'
+    /** Browser-local setting: the folder 【+】 reuses. */
+    const FOLDER_KEY = 'dsh.recent-tasks.folder.v1'
+    /** Window event: the entry was clicked, so a mounted list folds back to its first rows. */
+    const ROWS_RESET_EVENT = 'dsh.recent-tasks:entry'
+    /** Browser-local setting: finished sessions the user has not looked at yet. */
+    const UNREAD_KEY = 'dsh.recent-tasks.unread.v1'
+    /** Window event: the remembered unread set changed outside the mounted page. */
+    const UNREAD_EVENT = 'dsh.recent-tasks:unread'
+    /** Browser-local setting: sessions the person starred, drawn as their own band. */
+    const FAV_KEY = 'dsh.recent-tasks.favorites.v1'
+    /** Activity window required by the entry: sessions touched within this span. */
+    const ACTIVITY_WINDOW_MS = 10 * 24 * 60 * 60 * 1000
+    /** Rows shown on arrival; a full page leaves room for more than the short sidebar list. */
+    const COLLAPSED_ROWS = 15
+    /** Extra rows revealed by one 【展开其余】, so a long history stays scannable. */
+    const STEP_ROWS = 10
+    /** How often the relative timestamps are recomputed. */
+    const CLOCK_TICK_MS = 60 * 1000
+    const MINUTE_MS = 60 * 1000
+    const HOUR_MS = 60 * MINUTE_MS
+    const DAY_MS = 24 * HOUR_MS
+    /** Per-tab intent: after a refresh rebuilds the page, open this panel again. */
+    const REOPEN_KEY = 'dsh.recent-tasks.reopen.v1'
+    /** A rebuild takes seconds; an older intent describes a click the person has left behind. */
+    const REOPEN_TTL_MS = 120 * 1000
+    /** How long the entry waits for the borrowed refresh press before showing the page anyway. */
+    const PRESS_WAIT_MS = 8000
+    /** How often that wait looks at the borrowed button. */
+    const PRESS_POLL_MS = 100
+    /** The first frames of a press are still spent dimming its button; refusals answer after that. */
+    const PRESS_ARM_MS = 180
+    /** Where the app answers which plugin code it serves right now. */
+    const GRAPH_PATH = '/dsh-unlag/graph'
+    /** Asking takes milliseconds even when slow; a wedged answer must not hold the entry. */
+    const GRAPH_WAIT_MS = 1500
+    /** How long the rebuilt page re-asserts the seat the click asked for. */
+    const REOPEN_WATCH_MS = 8000
+    /** First look after boot; the seats exist a few frames after apply. */
+    const REOPEN_START_MS = 120
+    /** Wait while the main seat is not registered yet. */
+    const REOPEN_RETRY_MS = 150
+    /** How often the watch looks at the main seat. */
+    const REOPEN_POLL_MS = 350
+    /** The boot restore can run again on later loads; take the seat back this often at most. */
+    const REOPEN_MAX_OPENS = 4
+
+    const ZH = {
+      'entry.label': '最近任务',
+      'page.title': '最近任务',
+      'page.back': '返回对话',
+      'page.add': '新建会话',
+      'page.empty': '最近 10 天没有会话。',
+      'page.loading': '正在读取会话…',
+      'page.more': '展开其余 {n} 个对话',
+      'page.less': '收起',
+      'section.running': '正在运行',
+      'section.fav': '收藏',
+      'section.unread': '未读',
+      'section.done': '已完成',
+      'section.emptyRunning': '当前没有正在运行的对话',
+      'section.emptyRunningFav': '正在运行的对话都在收藏里',
+      'section.pendingChip': '待你处理 {n}',
+      'pending.approval': '等你确认',
+      'pending.planReview': '等你定方案',
+      'pending.question': '等你回答',
+      'pending.other': '等你处理',
+      'section.emptyFav': '点亮星星，会话会收进这里',
+      'section.emptyUnread': '没有未读的对话',
+      'section.emptyDone': '还没有已完成的对话',
+      'star.add': '收藏这个对话',
+      'star.remove': '取消收藏',
+      'row.unknownWorkspace': '未记录工作区',
+      'chooser.title': '选择文件夹',
+      'chooser.hint': '新建的会话会使用这个文件夹，之后点【+】会直接用它。',
+      'chooser.existing': '已有工作区',
+      'chooser.noWorkspaces': '还没有工作区，请选择其他文件夹。',
+      'chooser.other': '选择其他文件夹…',
+      'chooser.picking': '正在等待选择…',
+      'chooser.cancel': '取消',
+      'chooser.unavailable': '当前界面无法打开文件夹选择器。',
+      'chooser.pickFailed': '无法打开文件夹选择器：{message}',
+      'error.create': '新建会话失败：{message}',
+      'error.open': '打开会话失败：{message}',
+      'error.noSessions': '会话服务不可用。',
+      'time.now': '刚刚',
+      'time.minute': '{n} 分钟前',
+      'time.hour': '{n} 小时前',
+      'time.yesterday': '昨天',
+      'time.day': '{n} 天前',
+    }
+
+    const EN = {
+      'entry.label': 'Recent tasks',
+      'page.title': 'Recent tasks',
+      'page.back': 'Back to chat',
+      'page.add': 'New session',
+      'page.empty': 'No sessions in the last 10 days.',
+      'page.loading': 'Loading sessions…',
+      'page.more': 'Show the remaining {n}',
+      'page.less': 'Show less',
+      'section.running': 'Running now',
+      'section.fav': 'Favorites',
+      'section.unread': 'Unread',
+      'section.done': 'Completed',
+      'section.emptyRunning': 'Nothing is running right now',
+      'section.emptyRunningFav': 'Everything running is in favorites',
+      'section.pendingChip': '{n} waiting on you',
+      'pending.approval': 'Needs approval',
+      'pending.planReview': 'Review the plan',
+      'pending.question': 'Answer needed',
+      'pending.other': 'Needs you',
+      'section.emptyFav': 'Star a session to keep it here',
+      'section.emptyUnread': 'Nothing unread',
+      'section.emptyDone': 'Nothing completed yet',
+      'star.add': 'Star this session',
+      'star.remove': 'Remove from favorites',
+      'row.unknownWorkspace': 'Workspace not recorded',
+      'chooser.title': 'Choose a folder',
+      'chooser.hint': 'New sessions start in this folder, and 【+】 reuses it next time.',
+      'chooser.existing': 'Existing workspaces',
+      'chooser.noWorkspaces': 'No workspaces yet — choose another folder.',
+      'chooser.other': 'Choose another folder…',
+      'chooser.picking': 'Waiting for the picker…',
+      'chooser.cancel': 'Cancel',
+      'chooser.unavailable': 'This interface cannot open the folder picker.',
+      'chooser.pickFailed': 'Could not open the folder picker: {message}',
+      'error.create': 'Could not create the session: {message}',
+      'error.open': 'Could not open the session: {message}',
+      'error.noSessions': 'The session service is unavailable.',
+      'time.now': 'just now',
+      'time.minute': '{n} min ago',
+      'time.hour': '{n} h ago',
+      'time.yesterday': 'yesterday',
+      'time.day': '{n} d ago',
+    }
+
+    const CSS = [
+      '.drt-root{height:100%;min-height:0;overflow:hidden;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family)}',
+      '.drt-page{height:100%;min-height:0;box-sizing:border-box;display:flex;flex-direction:column;gap:12px;padding:18px 20px 14px}',
+      '.drt-header{flex:none;display:flex;align-items:center;gap:10px}',
+      '.drt-title{margin:0;flex:1;min-width:0;font-size:16px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.drt-actions{flex:none;display:flex;align-items:center;gap:8px}',
+      '.drt-ghost{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);padding:5px 11px;font-family:inherit;font-size:12.5px;line-height:1.4;cursor:pointer}',
+      '.drt-ghost:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
+      '.drt-add{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:none;border-radius:8px;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground);font-family:inherit;font-size:17px;font-weight:600;line-height:1;cursor:pointer}',
+      '.drt-add:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}',
+      '.drt-add:disabled{opacity:.55;cursor:default}',
+      '.drt-notice{margin:0;font-size:12px;line-height:1.6;color:var(--dsw-alias-state-error-primary)}',
+      '.drt-foot{flex:none;display:flex;justify-content:center}',
+      '.drt-more{border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-state-business-primary);padding:6px 12px;font-family:inherit;font-size:12.5px;cursor:pointer}',
+      '.drt-more:hover{background:var(--dsw-alias-interactive-bg-hover)}',
+      '.drt-body{flex:1;min-height:0;display:flex;flex-direction:column;gap:16px}',
+      '.drt-section{display:flex;flex-direction:column;gap:8px;min-height:0}',
+      '.drt-sectionUnread{flex:none;min-height:0;border-top:1px solid var(--dsw-alias-border-l1);padding-top:14px}',
+      '.drt-sectionDone{flex:1;min-height:0;border-top:1px solid var(--dsw-alias-border-l1);padding-top:14px}',
+      '.drt-sectionFav{flex:none;min-height:0;border-top:1px solid var(--dsw-alias-border-l1);padding-top:14px}',
+      '.drt-headDot.is-unread{background:var(--dsw-alias-state-business-primary);opacity:1;animation:none}',
+      '.drt-headDot.is-fav{background:var(--dsw-alias-state-warn-primary);opacity:1;animation:none}',
+      '.drt-sectionHead{flex:none;display:flex;align-items:center;gap:7px;min-width:0}',
+      '.drt-headHint{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;color:var(--dsw-alias-label-tertiary)}',
+      '.drt-headDot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-state-success-primary);animation:drt-breathe 1.8s ease-in-out infinite}',
+      '.drt-headDot.is-idle{background:var(--dsw-alias-label-tertiary);opacity:.45;animation:none}',
+      '.drt-headDot.is-pending{background:var(--dsw-alias-state-error-primary);opacity:1;animation:drt-pause 2.6s ease-in-out infinite}',
+      '.drt-chip{flex:none;display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:9px;background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);color:var(--dsw-alias-state-error-primary);font-size:11px;font-weight:600;line-height:1;white-space:nowrap}',
+      '.drt-zoneLabel{font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--dsw-alias-label-secondary)}',
+      '.drt-count{flex:none;min-width:18px;height:18px;box-sizing:border-box;padding:0 5px;border-radius:9px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:18px;text-align:center;font-variant-numeric:tabular-nums}',
+      '.drt-cardGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));align-content:start;gap:10px;min-width:0;padding:3px 3px 5px;scrollbar-gutter:stable}',
+      '.drt-cardGrid.is-running{max-height:min(34vh,320px);overflow-y:auto;overscroll-behavior:contain}',
+      '.drt-cardGrid.is-unread{max-height:min(26vh,240px);overflow-y:auto;overscroll-behavior:contain}',
+      '.drt-cardGrid.is-fav{max-height:min(24vh,220px);overflow-y:auto;overscroll-behavior:contain}',
+      '.drt-cardGrid.is-done{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}',
+      '.drt-card{position:relative;display:flex;flex-direction:column;gap:5px;height:100%;min-height:78px;box-sizing:border-box;padding:11px 13px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-base);color:inherit;font-family:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease}',
+      '.drt-card:hover{transform:translateY(-1px)}',
+      '.drt-card:active{transform:translateY(0)}',
+      '.drt-card:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}',
+      '.drt-card.is-running{border-color:color-mix(in srgb, var(--dsw-alias-state-success-primary) 30%, var(--dsw-alias-border-l1));background:linear-gradient(180deg,color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, var(--dsw-alias-bg-base)),color-mix(in srgb, var(--dsw-alias-state-success-primary) 5%, var(--dsw-alias-bg-base)));box-shadow:0 12px 26px -12px color-mix(in srgb, var(--dsw-alias-state-success-primary) 78%, transparent),inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-state-success-primary) 16%, transparent)}',
+      '.drt-card.is-running:hover{background:color-mix(in srgb, var(--dsw-alias-state-success-primary) 13%, var(--dsw-alias-bg-base));box-shadow:0 16px 30px -12px color-mix(in srgb, var(--dsw-alias-state-success-primary) 88%, transparent),inset 0 1px 0 color-mix(in srgb, var(--dsw-alias-state-success-primary) 22%, transparent)}',
+      '.drt-card.is-unread{border-color:color-mix(in srgb, var(--dsw-alias-state-business-primary) 26%, var(--dsw-alias-border-l1));background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 6%, var(--dsw-alias-bg-base))}',
+      '.drt-card.is-unread:hover{background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 11%, var(--dsw-alias-bg-base))}',
+      '.drt-card.is-done:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l2)}',
+      '.drt-card.is-fav{border-color:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 30%, var(--dsw-alias-border-l1));background:linear-gradient(180deg,color-mix(in srgb, var(--dsw-alias-state-warn-primary) 9%, var(--dsw-alias-bg-base)),color-mix(in srgb, var(--dsw-alias-state-warn-primary) 4%, var(--dsw-alias-bg-base)))}',
+      '.drt-card.is-fav:hover{background:color-mix(in srgb, var(--dsw-alias-state-warn-primary) 13%, var(--dsw-alias-bg-base))}',
+      '.drt-card.is-pending{border-color:color-mix(in srgb, var(--dsw-alias-state-error-primary) 32%, var(--dsw-alias-border-l1));background:linear-gradient(180deg,color-mix(in srgb, var(--dsw-alias-state-error-primary) 11%, var(--dsw-alias-bg-base)),color-mix(in srgb, var(--dsw-alias-state-error-primary) 5%, var(--dsw-alias-bg-base)));box-shadow:inset 3px 0 0 color-mix(in srgb, var(--dsw-alias-state-error-primary) 70%, transparent),0 10px 22px -14px color-mix(in srgb, var(--dsw-alias-state-error-primary) 65%, transparent)}',
+      '.drt-card.is-pending:hover{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, var(--dsw-alias-bg-base));box-shadow:inset 3px 0 0 color-mix(in srgb, var(--dsw-alias-state-error-primary) 88%, transparent),0 14px 26px -14px color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, transparent)}',
+      '.drt-cardDot.is-fav{background:var(--dsw-alias-state-warn-primary);opacity:1}',
+      '.drt-star{position:absolute;top:5px;right:5px;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:none;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;opacity:.5;transition:opacity .16s ease,color .16s ease,background-color .16s ease,transform .16s ease}',
+      '.drt-star:hover{opacity:1;background:var(--dsw-alias-interactive-bg-hover);transform:scale(1.06)}',
+      '.drt-star:focus-visible{opacity:1;outline:2px solid var(--dsw-alias-state-warn-primary);outline-offset:1px}',
+      '.drt-star.is-on{color:var(--dsw-alias-state-warn-primary);opacity:1}',
+      '.drt-card:hover .drt-star{opacity:.92}',
+      '.drt-card:hover .drt-star.is-on{opacity:1}',
+      '.drt-star.is-on svg{animation:drt-star-pop .3s cubic-bezier(.34,1.56,.64,1)}',
+      '.drt-card.is-fav{animation:drt-fav-in .22s cubic-bezier(.22,1,.36,1)}',
+      '@keyframes drt-star-pop{0%{transform:scale(.7)}60%{transform:scale(1.16)}100%{transform:scale(1)}}',
+      '@keyframes drt-fav-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}',
+      '.drt-cardHead{display:flex;align-items:flex-start;gap:7px;min-width:0;padding-right:24px}',
+      '.drt-cardDot{flex:none;width:7px;height:7px;margin-top:5px;border-radius:50%;background:var(--dsw-alias-label-tertiary);opacity:.45}',
+      '.drt-cardDot.is-running{background:var(--dsw-alias-state-success-primary);opacity:1;animation:drt-breathe 1.8s ease-in-out infinite}',
+      '.drt-cardDot.is-unread{background:var(--dsw-alias-state-business-primary);opacity:1;animation:none}',
+      '.drt-cardDot.is-pending{background:var(--dsw-alias-state-error-primary);opacity:1;animation:drt-pause 2.6s ease-in-out infinite}',
+      '.drt-pill{flex:none;display:inline-flex;align-items:center;padding:1px 6px;border-radius:6px;background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 15%, transparent);color:var(--dsw-alias-state-error-primary);font-size:10.5px;font-weight:600;line-height:1.5;white-space:nowrap}',
+      '.drt-cardTitle{flex:1;min-width:0;font-size:13.5px;font-weight:600;line-height:1.32;color:var(--dsw-alias-label-primary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}',
+      '.drt-cardMeta{display:flex;align-items:center;gap:6px;min-width:0;margin-top:auto;font-size:11.5px;line-height:1.4;color:var(--dsw-alias-label-tertiary)}',
+      '.drt-cardWorkspace{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.drt-cardSep{flex:none;opacity:.6}',
+      '.drt-cardTime{flex:none;white-space:nowrap;font-variant-numeric:tabular-nums}',
+      '.drt-section .drt-empty{padding:2px 1px 0;font-size:12px}',
+      '@keyframes drt-breathe{0%,100%{opacity:1}50%{opacity:.45}}',
+      '@keyframes drt-pause{0%,100%{opacity:1}50%{opacity:.32}}',
+      '@media (prefers-reduced-motion:reduce){.drt-headDot,.drt-cardDot,.drt-star.is-on svg,.drt-card.is-fav{animation:none}.drt-card,.drt-star{transition:none}.drt-card:hover,.drt-card:active,.drt-star:hover{transform:none}}',
+      '.drt-empty{margin:0;padding:8px 2px;font-size:12.5px;line-height:1.6;color:var(--dsw-alias-label-tertiary)}',
+      '.drt-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.36)}',
+      '.drt-dialog{display:flex;flex-direction:column;width:min(460px,100%);max-height:min(560px,78vh);overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.3)}',
+      '.drt-dialogHead{flex:none;padding:16px 18px 0}',
+      '.drt-dialogTitle{margin:0;font-size:14.5px;font-weight:700}',
+      '.drt-dialogHint{margin:6px 18px 0;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary)}',
+      '.drt-dialogSection{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:14px 18px 4px}',
+      '.drt-sectionLabel{font-size:11px;font-weight:600;color:var(--dsw-alias-label-tertiary)}',
+      '.drt-choiceList{display:flex;flex-direction:column;gap:2px;margin:2px 0 0;padding:0;list-style:none}',
+      '.drt-choice{width:100%;min-width:0;display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid transparent;border-radius:8px;background:transparent;color:inherit;font-family:inherit;text-align:left;cursor:pointer}',
+      '.drt-choice:hover{background:var(--dsw-alias-interactive-bg-hover);border-color:var(--dsw-alias-border-l1)}',
+      '.drt-choiceTitle{font-size:12.5px;color:var(--dsw-alias-label-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.drt-choicePath{font-size:11px;color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.drt-error{margin:0 18px;font-size:11.5px;line-height:1.6;color:var(--dsw-alias-state-error-primary)}',
+      '.drt-dialogFoot{flex:none;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:14px 18px 16px}',
+      '.drt-primary{border:none;border-radius:8px;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground);padding:6px 13px;font-family:inherit;font-size:12.5px;line-height:1.4;cursor:pointer}',
+      '.drt-primary:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}',
+      '.drt-primary:disabled{opacity:.55;cursor:default}',
+    ].join('\n')
+
+    /** @returns {string} the message of an unknown thrown value. */
+    function messageOf(error) {
+      if (error instanceof Error && error.message) return error.message
+      return String(error)
+    }
+
+    /** @returns {string} the last path segment, accepting both separators. */
+    function basename(path) {
+      if (typeof path !== 'string' || path.length === 0) return ''
+      const trimmed = path.replace(/[\\/]+$/, '')
+      const at = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+      return at === -1 ? trimmed : trimmed.slice(at + 1)
+    }
+
+    /** @returns {Set<string>} the archive set in whichever shape the snapshot carries. */
+    function toIdSet(value) {
+      if (!value) return new Set()
+      if (Array.isArray(value)) return new Set(value)
+      if (typeof value.forEach === 'function' && typeof value.has === 'function') return value
+      if (typeof value[Symbol.iterator] === 'function') return new Set(value)
+      return new Set()
+    }
+
+    /**
+     * Render one epoch-ms instant as a coarse relative age.
+     * @param at - instant in epoch ms.
+     * @param now - current instant in epoch ms.
+     * @param t - bound translate function.
+     * @returns the relative label.
+     */
+    function formatRelative(at, now, t) {
+      const elapsed = Math.max(0, now - at)
+      if (elapsed < MINUTE_MS) return t('time.now')
+      const minutes = Math.floor(elapsed / MINUTE_MS)
+      if (minutes < 60) return t('time.minute', { n: minutes })
+      const hours = Math.floor(elapsed / HOUR_MS)
+      if (hours < 24) return t('time.hour', { n: hours })
+      const todayStart = new Date(now)
+      todayStart.setHours(0, 0, 0, 0)
+      const dayStart = new Date(at)
+      dayStart.setHours(0, 0, 0, 0)
+      const days = Math.max(1, Math.round((todayStart.getTime() - dayStart.getTime()) / DAY_MS))
+      if (days <= 1) return t('time.yesterday')
+      return t('time.day', { n: days })
+    }
+
+    /** @returns {string} the remembered folder, or '' when none is stored. */
+    function readFolder() {
+      try {
+        const stored = window.localStorage.getItem(FOLDER_KEY)
+        return typeof stored === 'string' ? stored : ''
+      } catch {
+        return ''
+      }
+    }
+
+    /** Remember the folder 【+】 should reuse; storage failures are not fatal. */
+    function writeFolder(path) {
+      try {
+        window.localStorage.setItem(FOLDER_KEY, path)
+      } catch {
+        /* private mode or a disabled store — the chooser simply reappears next time */
+      }
+    }
+
+    /** Forget the remembered folder. */
+    function clearFolder() {
+      try {
+        window.localStorage.removeItem(FOLDER_KEY)
+      } catch {
+        /* nothing to clear */
+      }
+    }
+
+    /**
+     * Ask a mounted page to fold its list back to the first rows. The count is
+     * not remembered: the list belongs to one visit, and a page that is mounted
+     * while hidden (another panel on screen) hears this as the entry is clicked.
+     */
+    function requestRowReset() {
+      try {
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+          window.dispatchEvent(new Event(ROWS_RESET_EVENT))
+        }
+      } catch {
+        /* an environment without events simply keeps the list as it was */
+      }
+    }
+
+    /** @returns {string[]} the sessions remembered as finished but not yet opened. */
+    function readUnread() {
+      try {
+        const raw = window.localStorage.getItem(UNREAD_KEY)
+        if (typeof raw !== 'string' || raw === '') return []
+        const parsed = JSON.parse(raw)
+        if (!Array.isArray(parsed)) return []
+        return parsed.filter(id => typeof id === 'string' && id !== '')
+      } catch {
+        return []
+      }
+    }
+
+    /** Remember which finished sessions still wait to be opened. */
+    function writeUnread(ids) {
+      try {
+        window.localStorage.setItem(UNREAD_KEY, JSON.stringify(ids))
+      } catch {
+        /* nothing to persist */
+      }
+    }
+
+    /** Session id -> the instant the person last opened it, for this page load. */
+    const readAt = new Map()
+
+    /** Tell a mounted page that the remembered unread set changed. */
+    function notifyUnread() {
+      try {
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+          window.dispatchEvent(new Event(UNREAD_EVENT))
+        }
+      } catch {
+        /* an environment without events keeps the last render */
+      }
+    }
+
+    /**
+     * Opening a Session settles its finished run: the row leaves 未读 and stays
+     * out until a newer run finishes.
+     * @param id - session the person just opened.
+     */
+    function markUnreadRead(id) {
+      if (typeof id !== 'string' || id === '') return
+      readAt.set(id, Date.now())
+      const remembered = readUnread()
+      const kept = remembered.filter(value => value !== id)
+      if (kept.length !== remembered.length) writeUnread(kept)
+      notifyUnread()
+    }
+
+    /** @returns {string[]} the sessions the person starred, newest first. */
+    function readFavorites() {
+      try {
+        const raw = window.localStorage.getItem(FAV_KEY)
+        if (typeof raw !== 'string' || raw === '') return []
+        const parsed = JSON.parse(raw)
+        if (!Array.isArray(parsed)) return []
+        const seen = new Set()
+        const ids = []
+        for (const id of parsed) {
+          if (typeof id !== 'string' || id === '' || seen.has(id)) continue
+          seen.add(id)
+          ids.push(id)
+        }
+        return ids
+      } catch {
+        return []
+      }
+    }
+
+    /** Remember the starred sessions; storage failures are not fatal. */
+    function writeFavorites(ids) {
+      try {
+        window.localStorage.setItem(FAV_KEY, JSON.stringify(ids))
+      } catch {
+        /* nothing to persist */
+      }
+    }
+
+
+    /**
+     * Keep the remembered "finished but not yet opened" set from activation on.
+     *
+     * Being retained is not being looked at: the shell keeps the last opened
+     * Conversation retained even while another panel covers it, and counts that
+     * session as read when its run stops. Here a run that stops while its
+     * Conversation is not on screen is unread — including the case that started
+     * this: open a running Session once, leave it, and let it finish while the
+     * list is on screen.
+     *
+     * @param ctx - client root context.
+     * @returns disposer that stops the watch.
+     */
+    function watchUnread(ctx) {
+      let disposed = false
+      let timer = null
+      const stops = []
+      /** session id -> was the run on its way at the previous look. */
+      const active = new Map()
+
+      /** @returns {boolean} whether a panel covers the Conversation right now. */
+      const panelCovered = () => {
+        try {
+          const layout = ctx.get('layout')
+          const info = layout && layout.panelInfo && typeof layout.panelInfo.getSnapshot === 'function'
+            ? layout.panelInfo.getSnapshot()
+            : undefined
+          const activeId = info ? info.activePanelId : null
+          return typeof activeId === 'string' && activeId !== ''
+        } catch {
+          return false
+        }
+      }
+
+      const reconcile = () => {
+        if (disposed) return
+        const sessions = ctx.get('sessions')
+        const snapshot = sessions && sessions.list && typeof sessions.list.getSnapshot === 'function'
+          ? sessions.list.getSnapshot()
+          : undefined
+        if (!snapshot || !snapshot.byId) return
+        let statuses
+        try {
+          const uiSession = ctx.get('uiSession')
+          statuses = uiSession && uiSession.sessionStatus && typeof uiSession.sessionStatus.getSnapshot === 'function'
+            ? uiSession.sessionStatus.getSnapshot()
+            : undefined
+        } catch {
+          statuses = undefined
+        }
+        const covered = panelCovered()
+        const isVisible = id => {
+          if (covered) return false
+          const session = snapshot.byId[id]
+          const retained = session && session.retainedBy ? session.retainedBy.mainView : 0
+          return typeof retained === 'number' && retained > 0
+        }
+        const next = new Set(readUnread())
+        let changed = false
+        if (statuses && typeof statuses.forEach === 'function') {
+          statuses.forEach((status, id) => {
+            if (!status) return
+            const busy = status.running === true || status.pendingInteraction !== undefined
+            const wasBusy = active.get(id) === true
+            active.set(id, busy)
+            if (busy) {
+              // A new run starts the question over.
+              if (next.delete(id)) changed = true
+              return
+            }
+            if (isVisible(id)) {
+              if (next.delete(id)) changed = true
+              return
+            }
+            if (wasBusy) {
+              if (!next.has(id)) {
+                next.add(id)
+                changed = true
+              }
+              return
+            }
+            // A flag the shell set while this watch was not looking.
+            if (status.completionUnread === true) {
+              const session = snapshot.byId[id]
+              const at = session && typeof session.updatedAt === 'number' ? session.updatedAt : 0
+              const opened = readAt.has(id) ? readAt.get(id) : 0
+              if (at > opened && !next.has(id)) {
+                next.add(id)
+                changed = true
+              }
+            }
+          })
+        }
+        // Drop rows that no longer exist, and rows the person has opened from
+        // another route while no panel covered the Conversation.
+        for (const id of Array.from(next)) {
+          if (!snapshot.byId[id]) {
+            next.delete(id)
+            changed = true
+            continue
+          }
+          if (isVisible(id)) {
+            next.delete(id)
+            changed = true
+          }
+        }
+        for (const id of Array.from(active.keys())) {
+          if (!snapshot.byId[id]) active.delete(id)
+        }
+        if (!changed) return
+        writeUnread(Array.from(next))
+        notifyUnread()
+      }
+
+      const bind = source => {
+        if (!source || typeof source.subscribe !== 'function') return
+        const stop = source.subscribe(reconcile)
+        if (typeof stop === 'function') stops.push(stop)
+      }
+
+      const attach = () => {
+        if (disposed) return
+        const sessions = ctx.get('sessions')
+        const layout = ctx.get('layout')
+        bind(sessions ? sessions.list : undefined)
+        bind(layout ? layout.panelInfo : undefined)
+        reconcile()
+      }
+
+      // The status service can arrive after activation; bind it when it does
+      // and keep the list and panel watches running meanwhile.
+      let tries = 0
+      const attachStatus = () => {
+        if (disposed) return
+        let status
+        try {
+          const uiSession = ctx.get('uiSession')
+          status = uiSession ? uiSession.sessionStatus : undefined
+        } catch {
+          status = undefined
+        }
+        if (status && typeof status.subscribe === 'function') {
+          bind(status)
+          reconcile()
+          return
+        }
+        tries += 1
+        if (tries < 240) timer = setTimeout(attachStatus, 500)
+      }
+
+      attach()
+      attachStatus()
+      return () => {
+        disposed = true
+        if (timer !== null) clearTimeout(timer)
+        for (const stop of stops) {
+          try {
+            stop()
+          } catch {
+            /* the watch is going away anyway */
+          }
+        }
+      }
+    }
+
+    /** Inject this plugin's stylesheet once, returning a disposer that removes it. */
+    function injectStyle() {
+      if (typeof document === 'undefined' || !document.head) return () => {}
+      const selector = 'style[data-plugin-css="' + PKG + '"]'
+      if (document.querySelector(selector) !== null) return () => {}
+      const tag = document.createElement('style')
+      tag.dataset.plugin = PKG
+      tag.dataset.pluginCss = PKG
+      tag.textContent = CSS
+      document.head.appendChild(tag)
+      return () => {
+        if (tag.parentNode) tag.parentNode.removeChild(tag)
+      }
+    }
+
+    /**
+     * Subscribe to a Host/Catalog observable snapshot.
+     * @param source - `{ getSnapshot, subscribe }`, or undefined when the service is absent.
+     * @returns the current snapshot, re-rendering on change.
+     */
+    function useObservable(source) {
+      const [value, setValue] = React.useState(() => {
+        try {
+          return source && typeof source.getSnapshot === 'function' ? source.getSnapshot() : undefined
+        } catch {
+          return undefined
+        }
+      })
+      React.useEffect(() => {
+        if (!source || typeof source.getSnapshot !== 'function' || typeof source.subscribe !== 'function') {
+          return undefined
+        }
+        let live = true
+        const read = () => {
+          if (!live) return
+          try {
+            setValue(source.getSnapshot())
+          } catch {
+            /* a disposed source simply stops publishing */
+          }
+        }
+        read()
+        const dispose = source.subscribe(read)
+        return () => {
+          live = false
+          if (typeof dispose === 'function') dispose()
+        }
+      }, [source])
+      return value
+    }
+
+    /** @returns {number} the current wall clock, refreshed on a coarse interval. */
+    function useNow(intervalMs) {
+      const [now, setNow] = React.useState(() => Date.now())
+      React.useEffect(() => {
+        const timer = setInterval(() => setNow(Date.now()), intervalMs)
+        return () => clearInterval(timer)
+      }, [intervalMs])
+      return now
+    }
+
+    /** @returns {Array} the Host-authoritative Workspace rows, or [] while unknown. */
+    function workspaceRows(host) {
+      try {
+        const snapshot = host.workspaces && host.workspaces.list && host.workspaces.list.getSnapshot
+          ? host.workspaces.list.getSnapshot()
+          : undefined
+        return snapshot && Array.isArray(snapshot.items) ? snapshot.items : []
+      } catch {
+        return []
+      }
+    }
+
+    /** @returns {string} the Workspace name a Session belongs to, falling back to its folder. */
+    function workspaceLabelOf(rows, session, t) {
+      const owner = rows.find(row => Array.isArray(row.sessionIds) && row.sessionIds.includes(session.id))
+      if (owner) return owner.title || basename(owner.path) || t('row.unknownWorkspace')
+      const byPath = session.cwd ? rows.find(row => row.path === session.cwd) : undefined
+      if (byPath) return byPath.title || basename(byPath.path) || t('row.unknownWorkspace')
+      return basename(session.cwd) || t('row.unknownWorkspace')
+    }
+
+    /** The three pending kinds DSH draws in its own sidebar, and their labels. */
+    const PENDING_LABELS = {
+      approval: 'pending.approval',
+      'plan-review': 'pending.planReview',
+      question: 'pending.question',
+    }
+
+    /**
+     * The interaction a Session is blocked on, reduced to its kind.
+     * The union is open, so an unknown kind still counts as pending: a new
+     * domain must not silently drop the row's badge and its place up top.
+     * @param status - one SessionStatus snapshot entry, or undefined.
+     * @returns the kind string, or undefined when nothing waits on the user.
+     */
+    function pendingKindOf(status) {
+      if (status === undefined || status === null) return undefined
+      const pending = status.pendingInteraction
+      if (pending === undefined || pending === null || typeof pending !== 'object') return undefined
+      return typeof pending.kind === 'string' && pending.kind !== '' ? pending.kind : 'other'
+    }
+
+    /** @returns {string} the short action label for a pending kind. */
+    function pendingLabel(kind, t) {
+      const key = PENDING_LABELS[kind]
+      return t(key === undefined ? 'pending.other' : key)
+    }
+
+    /**
+     * Project the live Session list into the rows this page shows: sessions with
+     * activity inside the 10-day window, newest first, subagent and archived
+     * sessions left out because they are not user-facing rows elsewhere either.
+     * @param listState - sessions service list snapshot.
+     * @param workspaceState - workspaces service list snapshot.
+     * @param statusState - uiSession status snapshot, or undefined while absent.
+     * @param unreadIds - sessions remembered as finished but not yet opened.
+     * @param favoriteIds - sessions the person starred; a star keeps its row
+     *   listed after the activity window, because 收藏 outlives the window.
+     * @param now - current instant in epoch ms.
+     * @param t - bound translate function.
+     * @returns the ordered rows, each tagged running, pending, unread, recent or starred.
+     */
+    function projectRows(listState, workspaceState, statusState, unreadIds, favoriteIds, now, t) {
+      if (!listState || !listState.byId || !Array.isArray(listState.ids)) return []
+      const rows = workspaceState && Array.isArray(workspaceState.items) ? workspaceState.items : []
+      const archived = toIdSet(workspaceState ? workspaceState.archivedSessionIds : undefined)
+      const statuses = statusState && typeof statusState.get === 'function' ? statusState : null
+      const remembered = unreadIds instanceof Set ? unreadIds : new Set(unreadIds || [])
+      const starred = favoriteIds instanceof Set ? favoriteIds : new Set(favoriteIds || [])
+      const result = []
+      for (const id of listState.ids) {
+        const session = listState.byId[id]
+        if (!session || session.origin === 'subagent') continue
+        if (archived.has(id)) continue
+        const at = typeof session.updatedAt === 'number' ? session.updatedAt : 0
+        if (at <= 0) continue
+        const favorite = starred.has(id)
+        // The ten-day window defines 已完成 and 未读; a starred session stays in
+        // 收藏 after it, so the bands never disagree about a star.
+        const recent = now - at <= ACTIVITY_WINDOW_MS
+        if (!recent && !favorite) continue
+        const status = statuses === null ? undefined : statuses.get(id)
+        const pending = pendingKindOf(status)
+        // A Session blocked on the user is still on its way: it belongs to the
+        // running band and must never read as 未读, even when the Host has
+        // already cleared running while it waits.
+        const running = pending !== undefined || session.running === true || (status !== undefined && status.running === true)
+        const unread = !running && (remembered.has(id) || (status !== undefined && status.completionUnread === true))
+        result.push({
+          id,
+          title: (session.displayTitle || session.title || id),
+          workspace: workspaceLabelOf(rows, session, t),
+          at,
+          running,
+          pending,
+          unread,
+          recent,
+          favorite,
+        })
+      }
+      result.sort((left, right) => right.at - left.at)
+      return result
+    }
+
+    /** Sidebar glyph; the shell owns the button, so this only paints the icon. */
+    function PanelGlyph(props) {
+      const size = typeof props.size === 'number' ? props.size : 16
+      return h('svg', {
+        viewBox: '0 0 16 16',
+        width: size,
+        height: size,
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.3,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        'aria-hidden': 'true',
+        'data-dsh-panel-entry': PANEL_ID,
+      },
+        h('circle', { cx: 8, cy: 8, r: 5.4 }),
+        h('path', { d: 'M8 5.1v3.2l2.2 1.35' }),
+      )
+    }
+
+    /**
+     * The page mounted in the `main` seat under this plugin's key.
+     * @param props - the injected face: `{ host }` plus the framework's share.
+     * @returns the recent-tasks page.
+     */
+    function RecentTasksPage(props) {
+      const host = props.host
+      const t = host.t
+      const sessions = host.sessions
+      const listState = useObservable(sessions ? sessions.list : undefined)
+      const workspaceState = useObservable(host.workspaces ? host.workspaces.list : undefined)
+      const uiSession = host.uiSession
+      const statusState = useObservable(uiSession ? uiSession.sessionStatus : undefined)
+      const now = useNow(CLOCK_TICK_MS)
+      const [shown, setShown] = React.useState(COLLAPSED_ROWS)
+      const [unreadIds, setUnreadIds] = React.useState(readUnread)
+      const [favoriteIds, setFavoriteIds] = React.useState(readFavorites)
+      const [busy, setBusy] = React.useState(false)
+      const [chooser, setChooser] = React.useState(null)
+      const [notice, setNotice] = React.useState(null)
+
+      const favoriteSet = React.useMemo(() => new Set(favoriteIds), [favoriteIds])
+      const rows = React.useMemo(
+        () => projectRows(listState, workspaceState, statusState, unreadIds, favoriteSet, now, t),
+        [listState, workspaceState, statusState, unreadIds, favoriteSet, now],
+      )
+      // 收藏 is a view over the same rows, not a second list: the star and the
+      // band both read one set, so they can never drift apart. A starred row
+      // belongs to 收藏 alone — the other three bands read only the unstarred
+      // rest, so one session can never be listed twice. Unstar it and it drops
+      // back into whichever band its state names.
+      const favoriteRows = rows.filter(row => row.favorite === true)
+      const restRows = rows.filter(row => row.favorite !== true)
+      const runningRows = restRows.filter(row => row.running)
+      // A blocked Session keeps its place in this band but leads it and is
+      // painted differently: among these rows it is the only one that needs
+      // the person to do something before it can go on.
+      const pendingRows = runningRows.filter(row => row.pending !== undefined)
+      const liveRows = runningRows.filter(row => row.pending === undefined)
+      // A finished run the user has not opened waits in 未读; every other
+      // finished session is 已完成. Who started the conversation no longer
+      // matters, and no journal is read to find out.
+      const unreadRows = restRows.filter(row => !row.running && row.unread === true && row.recent !== false)
+      const doneRows = restRows.filter(row => !row.running && row.unread !== true && row.recent !== false)
+      // A running session that lives in 收藏 is still running; the band keeps
+      // its live dot and says where the row went instead of claiming idle.
+      const runningFavored = rows.filter(row => row.favorite === true && row.running).length
+      const visible = doneRows.slice(0, shown)
+      const remaining = doneRows.length - shown
+
+      // The remembered unread set is owned by the activation-level watch, which
+      // also sees runs finishing while this page is closed. The page renders it
+      // and re-reads it whenever that watch changes it.
+      React.useEffect(() => {
+        if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return undefined
+        const refresh = () => setUnreadIds(readUnread())
+        window.addEventListener(UNREAD_EVENT, refresh)
+        refresh()
+        return () => window.removeEventListener(UNREAD_EVENT, refresh)
+      }, [])
+
+      /** Reading a row here counts as opening it, wherever the click landed. */
+      const clearUnread = id => markUnreadRead(id)
+
+      /** Star or unstar one session; every band reads the same set, so all stay in step. */
+      const toggleFavorite = id => {
+        setFavoriteIds(previous => {
+          const next = previous.indexOf(id) === -1
+            ? [id].concat(previous)
+            : previous.filter(value => value !== id)
+          writeFavorites(next)
+          return next
+        })
+      }
+
+      // The list belongs to one visit: every arrival starts from the first rows.
+      // A page still mounted while another panel is on screen hears the entry's
+      // click, so leaving by another row and coming back also starts over.
+      React.useEffect(() => {
+        if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+          return undefined
+        }
+        const reset = () => setShown(COLLAPSED_ROWS)
+        window.addEventListener(ROWS_RESET_EVENT, reset)
+        return () => window.removeEventListener(ROWS_RESET_EVENT, reset)
+      }, [])
+
+      const leave = () => {
+        try {
+          const layout = host.layout
+          if (layout && typeof layout.selectPanel === 'function') layout.selectPanel(null)
+        } catch (error) {
+          console.warn('[recent-tasks] returning to the conversation failed:', error)
+        }
+      }
+
+      const openRow = row => {
+        if (row && row.unread === true) clearUnread(row.id)
+        const uiWorkspace = host.uiWorkspace
+        if (!uiWorkspace || typeof uiWorkspace.openSession !== 'function') {
+          setNotice({ tone: 'error', text: t('error.open', { message: t('error.noSessions') }) })
+          return
+        }
+        try {
+          // `openSession` shows the Conversation and returns this page to it in
+          // the same framework step, so it must be the last navigation here.
+          uiWorkspace.openSession(row.id)
+        } catch (error) {
+          setNotice({ tone: 'error', text: t('error.open', { message: messageOf(error) }) })
+        }
+      }
+
+      const folderUsable = async path => {
+        if (workspaceRows(host).some(row => row.path === path)) return true
+        const uiWorkspace = host.uiWorkspace
+        if (!uiWorkspace || typeof uiWorkspace.listDirectory !== 'function') return false
+        try {
+          await uiWorkspace.listDirectory(path)
+          return true
+        } catch {
+          return false
+        }
+      }
+
+      /**
+       * Resolve the Workspace that owns `path`, registering the folder as a
+       * Workspace when it is not one yet. New Sessions are then created inside
+       * that group instead of falling into Ungrouped.
+       * @param path - absolute folder the user chose or that was remembered.
+       * @returns the Workspace id, or undefined when the client cannot register one.
+       */
+      const ensureWorkspace = async path => {
+        const known = workspaceRows(host).find(row => row.path === path)
+        if (known && typeof known.workspaceId === 'string' && known.workspaceId !== '') return known.workspaceId
+        const workspaces = host.workspaces
+        if (!workspaces || typeof workspaces.create !== 'function') return undefined
+        const result = await workspaces.create({ path })
+        const workspace = result && result.workspace ? result.workspace : result
+        const workspaceId = workspace && workspace.workspaceId
+        return typeof workspaceId === 'string' && workspaceId !== '' ? workspaceId : undefined
+      }
+
+      const createIn = async path => {
+        setBusy(true)
+        setNotice(null)
+        try {
+          const workspaceId = await ensureWorkspace(path)
+          const uiWorkspace = host.uiWorkspace
+          if (workspaceId !== undefined && uiWorkspace && typeof uiWorkspace.connectWorkspace === 'function') {
+            // `startSession` is fire-and-forget and any later panel or layout
+            // navigation cancels the open it had pending, which left the old
+            // Conversation on screen. Connect first, then reveal in one
+            // synchronous step; `openSession` closes this page by itself.
+            const sessionId = await uiWorkspace.connectWorkspace(workspaceId)
+            if (typeof uiWorkspace.openSession === 'function') {
+              uiWorkspace.openSession(sessionId)
+              return
+            }
+          }
+          if (!sessions || typeof sessions.create !== 'function') throw new Error(t('error.noSessions'))
+          const sessionId = await sessions.create({ cwd: path })
+          if (uiWorkspace && typeof uiWorkspace.openSession === 'function') {
+            uiWorkspace.openSession(sessionId)
+            return
+          }
+          leave()
+        } catch (error) {
+          setNotice({ tone: 'error', text: t('error.create', { message: messageOf(error) }) })
+        } finally {
+          setBusy(false)
+        }
+      }
+
+      const choosePath = path => {
+        writeFolder(path)
+        setChooser(null)
+        void createIn(path)
+      }
+
+      const pickOther = async () => {
+        const uiWorkspace = host.uiWorkspace
+        if (!uiWorkspace || typeof uiWorkspace.pickDirectory !== 'function') {
+          setChooser(current => (current === null ? current : { ...current, error: t('chooser.unavailable') }))
+          return
+        }
+        setChooser(current => (current === null ? current : { ...current, picking: true, error: null }))
+        let picked = ''
+        try {
+          picked = (await uiWorkspace.pickDirectory()) || ''
+        } catch (error) {
+          setChooser(current => (current === null
+            ? current
+            : { ...current, picking: false, error: t('chooser.pickFailed', { message: messageOf(error) }) }))
+          return
+        }
+        if (!picked) {
+          setChooser(current => (current === null ? current : { ...current, picking: false }))
+          return
+        }
+        choosePath(picked)
+      }
+
+      const onAdd = async () => {
+        if (busy) return
+        const remembered = readFolder()
+        if (remembered !== '') {
+          if (await folderUsable(remembered)) {
+            void createIn(remembered)
+            return
+          }
+          clearFolder()
+        }
+        setNotice(null)
+        setChooser({ workspaces: workspaceRows(host), picking: false, error: null })
+      }
+
+      const foot = doneRows.length > COLLAPSED_ROWS
+        ? h('div', { className: 'drt-foot' },
+          remaining > 0
+            ? h('button', {
+              type: 'button',
+              className: 'drt-more',
+              onClick: () => setShown(count => count + STEP_ROWS),
+            }, t('page.more', { n: remaining }))
+            : h('button', {
+              type: 'button',
+              className: 'drt-more',
+              onClick: () => setShown(COLLAPSED_ROWS),
+            }, t('page.less')),
+        )
+        : null
+
+      const cardMeta = row => h('span', { className: 'drt-cardMeta' },
+        row.pending === undefined ? null : h('span', { className: 'drt-pill' }, pendingLabel(row.pending, t)),
+        h('span', { className: 'drt-cardWorkspace' }, row.workspace),
+        h('span', { className: 'drt-cardSep', 'aria-hidden': 'true' }, '\u00b7'),
+        h('span', { className: 'drt-cardTime' }, formatRelative(row.at, now, t)),
+      )
+
+      // One card shape for every band; only the tone changes. A div rather than
+      // a button because the star lives inside it and buttons must not nest.
+      const card = (row, tone) => {
+        const favorite = row.favorite === true
+        const starLabel = favorite ? t('star.remove') : t('star.add')
+        const blocked = row.pending !== undefined && tone === 'running'
+        return h('div', {
+          key: row.id,
+          role: 'button',
+          tabIndex: 0,
+          className: 'drt-card is-' + tone + (blocked ? ' is-pending' : ''),
+          onClick: () => openRow(row),
+          onKeyDown: event => {
+            if (event.target !== event.currentTarget) return
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            openRow(row)
+          },
+        },
+          h('span', { className: 'drt-cardHead' },
+            h('span', {
+              className: 'drt-cardDot'
+                + (tone === 'done' ? '' : ' is-' + tone)
+                // A starred Session can still be running; the dot keeps saying so.
+                + (tone === 'fav' && row.running === true && row.pending === undefined ? ' is-running' : '')
+                + (blocked ? ' is-pending' : ''),
+              'aria-hidden': 'true',
+            }),
+            h('span', { className: 'drt-cardTitle' }, row.title),
+          ),
+          cardMeta(row),
+          h('button', {
+            type: 'button',
+            className: 'drt-star' + (favorite ? ' is-on' : ''),
+            'aria-pressed': favorite ? 'true' : 'false',
+            'aria-label': starLabel,
+            title: starLabel,
+            onClick: event => {
+              event.stopPropagation()
+              toggleFavorite(row.id)
+            },
+          },
+            h('svg', {
+              viewBox: '0 0 20 20',
+              width: 13,
+              height: 13,
+              'aria-hidden': 'true',
+              focusable: 'false',
+            },
+              h('path', {
+                d: 'M10 2.7l2.25 4.56 5.03.73-3.64 3.55.86 5.01L10 14.17l-4.5 2.38.86-5.01L2.72 7.99l5.03-.73z',
+                fill: favorite ? 'currentColor' : 'none',
+                stroke: 'currentColor',
+                strokeWidth: 1.4,
+                strokeLinejoin: 'round',
+              }),
+            ),
+          ),
+        )
+      }
+
+      const runningSection = h('section', { className: 'drt-section' },
+        h('div', { className: 'drt-sectionHead' },
+          h('span', {
+            className: 'drt-headDot'
+              + (runningRows.length === 0 && runningFavored === 0 ? ' is-idle' : '')
+              + (runningRows.length > 0 && liveRows.length === 0 ? ' is-pending' : ''),
+            'aria-hidden': 'true',
+          }),
+          h('span', { className: 'drt-zoneLabel' }, t('section.running')),
+          h('span', { className: 'drt-count' }, runningRows.length),
+          pendingRows.length === 0
+            ? null
+            : h('span', { className: 'drt-chip' }, t('section.pendingChip', { n: pendingRows.length })),
+          runningRows.length === 0
+            ? h('span', { className: 'drt-headHint' }, t(runningFavored > 0 ? 'section.emptyRunningFav' : 'section.emptyRunning'))
+            : null,
+        ),
+        runningRows.length === 0
+          ? null
+          : h('div', { className: 'drt-cardGrid is-running' }, pendingRows.concat(liveRows).map(row => card(row, 'running'))),
+      )
+
+      // 收藏 sits directly under the running band: a star lands there first.
+      const favoriteSection = h('section', { className: 'drt-section drt-sectionFav' },
+        h('div', { className: 'drt-sectionHead' },
+          h('span', { className: 'drt-headDot is-fav', 'aria-hidden': 'true' }),
+          h('span', { className: 'drt-zoneLabel' }, t('section.fav')),
+          h('span', { className: 'drt-count' }, favoriteRows.length),
+        ),
+        favoriteRows.length === 0
+          ? h('p', { className: 'drt-empty' }, t('section.emptyFav'))
+          : h('div', { className: 'drt-cardGrid is-fav' }, favoriteRows.map(row => card(row, 'fav'))),
+      )
+
+      const unreadSection = unreadRows.length === 0
+        ? null
+        : h('section', { className: 'drt-section drt-sectionUnread' },
+          h('div', { className: 'drt-sectionHead' },
+            h('span', { className: 'drt-headDot is-unread', 'aria-hidden': 'true' }),
+            h('span', { className: 'drt-zoneLabel' }, t('section.unread')),
+            h('span', { className: 'drt-count' }, unreadRows.length),
+          ),
+          h('div', { className: 'drt-cardGrid is-unread' }, unreadRows.map(row => card(row, 'unread'))),
+        )
+
+      // 已完成 keeps a placeholder band while the page would otherwise look
+      // empty — but not when 收藏 is what holds the rows: a "0 completed" line
+      // next to a full 收藏 would read as if they had gone missing.
+      const showDone = doneRows.length > 0 || (unreadRows.length === 0 && favoriteRows.length === 0)
+      const doneSection = showDone ? h('section', { className: 'drt-section drt-sectionDone' },
+        h('div', { className: 'drt-sectionHead' },
+          h('span', { className: 'drt-headDot is-idle', 'aria-hidden': 'true' }),
+          h('span', { className: 'drt-zoneLabel' }, t('section.done')),
+          h('span', { className: 'drt-count' }, doneRows.length),
+        ),
+        doneRows.length === 0
+          ? h('p', { className: 'drt-empty' }, t('section.emptyDone'))
+          : h('div', { className: 'drt-cardGrid is-done' }, visible.map(row => card(row, 'done'))),
+        foot,
+      ) : null
+
+      let body = null
+      if (listState === undefined || (listState && listState.phase === 'pending' && rows.length === 0)) {
+        body = h('p', { className: 'drt-empty' }, t('page.loading'))
+      } else if (rows.length === 0) {
+        body = h('p', { className: 'drt-empty' }, t('page.empty'))
+      } else {
+        body = h('div', { className: 'drt-body' }, runningSection, favoriteSection, unreadSection, doneSection)
+      }
+
+      const dialog = chooser === null ? null : h('div', {
+        className: 'drt-overlay',
+        onMouseDown: event => {
+          if (event.target === event.currentTarget && chooser.picking !== true) setChooser(null)
+        },
+      },
+        h('div', {
+          className: 'drt-dialog',
+          role: 'dialog',
+          'aria-modal': 'true',
+          'aria-label': t('chooser.title'),
+        },
+          h('div', { className: 'drt-dialogHead' },
+            h('h3', { className: 'drt-dialogTitle' }, t('chooser.title')),
+          ),
+          h('p', { className: 'drt-dialogHint' }, t('chooser.hint')),
+          h('div', { className: 'drt-dialogSection' },
+            h('span', { className: 'drt-sectionLabel' }, t('chooser.existing')),
+            chooser.workspaces.length === 0
+              ? h('p', { className: 'drt-empty' }, t('chooser.noWorkspaces'))
+              : h('ul', { className: 'drt-choiceList' },
+                chooser.workspaces.map(row => h('li', { key: row.workspaceId || row.path },
+                  h('button', {
+                    type: 'button',
+                    className: 'drt-choice',
+                    onClick: () => choosePath(row.path),
+                  },
+                    h('span', { className: 'drt-choiceTitle' }, row.title || basename(row.path)),
+                    h('span', { className: 'drt-choicePath' }, row.path),
+                  ),
+                )),
+              ),
+          ),
+          chooser.error ? h('p', { className: 'drt-error' }, chooser.error) : null,
+          h('div', { className: 'drt-dialogFoot' },
+            h('button', {
+              type: 'button',
+              className: 'drt-ghost',
+              onClick: () => setChooser(null),
+            }, t('chooser.cancel')),
+            h('button', {
+              type: 'button',
+              className: 'drt-primary',
+              disabled: chooser.picking === true,
+              onClick: () => { void pickOther() },
+            }, chooser.picking === true ? t('chooser.picking') : t('chooser.other')),
+          ),
+        ),
+      )
+
+      return h('div', { className: 'drt-root', 'data-dsh-plugin': 'recent-tasks' },
+        h('div', { className: 'drt-page' },
+          h('header', { className: 'drt-header' },
+            h('h2', { className: 'drt-title' }, t('page.title')),
+            h('div', { className: 'drt-actions' },
+              h('button', {
+                type: 'button',
+                className: 'drt-ghost',
+                onClick: leave,
+              }, t('page.back')),
+              h('button', {
+                type: 'button',
+                className: 'drt-add',
+                disabled: busy,
+                title: t('page.add'),
+                'aria-label': t('page.add'),
+                onClick: () => { void onAdd() },
+              }, '+'),
+            ),
+          ),
+          notice ? h('p', { className: 'drt-notice' }, notice.text) : null,
+          body,
+        ),
+        dialog,
+      )
+    }
+
+    /**
+     * The one button that swaps the shipped plugin code and rebuilds the
+     * interface. It belongs to the app's own refresh plugin, which labels it in
+     * the interface language; the sidebar row of this plugin never carries that
+     * label, so the two cannot be confused.
+     * @returns the button, or null while it is not on screen.
+     */
+    function refreshButton() {
+      const labels = ['解除卡顿', 'Unlag']
+      const buttons = document.querySelectorAll('button[aria-label]')
+      for (let index = 0; index < buttons.length; index += 1) {
+        const button = buttons[index]
+        if (labels.indexOf(button.getAttribute('aria-label')) === -1) continue
+        if (button.closest('[data-dsh-panel-entry]') !== null) continue
+        return button
+      }
+      return null
+    }
+
+    /**
+     * The revision the app serves for its composed plugin set right now, or ''
+     * when the answer cannot be read.
+     *
+     * The app publishes the live revision between the refresh button's own
+     * plugin seams; a document compares it against the revision it saw when it
+     * started, and the two differ exactly when that document runs stale code.
+     * @returns the served revision, or '' when unknown.
+     */
+    async function servedRev() {
+      const controller = typeof AbortController === 'function' ? new AbortController() : null
+      const timer = controller === null ? null : setTimeout(() => controller.abort(), GRAPH_WAIT_MS)
+      try {
+        const response = await fetch(GRAPH_PATH, {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          signal: controller === null ? undefined : controller.signal,
+        })
+        if (!response.ok) return ''
+        const body = await response.json()
+        const graph = body === null || typeof body !== 'object' ? null : body.graph
+        const rev = graph === null || typeof graph !== 'object' ? null : graph.rev
+        return typeof rev === 'string' ? rev : ''
+      } catch {
+        return ''
+      } finally {
+        if (timer !== null) clearTimeout(timer)
+      }
+    }
+
+    function pressWaiting(button) {
+      return button.isConnected && button.style.opacity === '0.4'
+    }
+
+    /**
+     * Read the intent a rebuild leaves for the next document. A stale one is
+     * ignored: it would describe a click the person has long left behind.
+     * @returns the intent, or null when there is none worth acting on.
+     */
+    function reopenIntent() {
+      try {
+        const raw = window.sessionStorage.getItem(REOPEN_KEY)
+        if (raw === null) return null
+        const value = JSON.parse(raw)
+        const at = value === null || typeof value !== 'object' ? 0 : Number(value.at)
+        if (!Number.isFinite(at)) return null
+        if (Date.now() - at < 0 || Date.now() - at > REOPEN_TTL_MS) return null
+        return { at }
+      } catch {
+        return null
+      }
+    }
+
+    /** Leave the intent for the document the press is about to rebuild. */
+    function writeReopenIntent() {
+      try {
+        window.sessionStorage.setItem(REOPEN_KEY, JSON.stringify({ at: Date.now() }))
+      } catch {
+        // A tab that refuses storage simply enters the page by the old route.
+      }
+    }
+
+    /** Drop the intent: either the page is opening now, or the person moved on. */
+    function clearReopenIntent() {
+      try {
+        window.sessionStorage.removeItem(REOPEN_KEY)
+      } catch {
+        // Nothing to clear.
+      }
+    }
+
+    /**
+     * Make a click on the sidebar entry refresh the running code before the
+     * pages switch.
+     *
+     * The refresh button lives in the Conversation header, so it only exists
+     * while the Conversation is on screen: the click is held here, the button is
+     * pressed for its own decision path — switches, address check, every refusal
+     * reason — and this page opens once that press answers. A press that goes
+     * through rebuilds the document; the intent left in the tab brings this page
+     * back after the rebuild. A press that refuses changed nothing, so the page
+     * opens right away, exactly as before.
+     *
+     * The press is only borrowed while the document runs older plugin code than the
+     * app serves now — the revision it saw as it started against the live one. A
+     * document that started on the current code opens the page at once, since
+     * the rebuild would install the same files.
+     * @param ctx - Client root context.
+     * @returns disposer removing the listener.
+     */
+    function installRefreshBridge(ctx) {
+      if (typeof document === 'undefined' || typeof window === 'undefined') return () => {}
+      let busy = false
+      /** Where the current click is in its life; a superseded click stops caring. */
+      let generation = 0
+
+      /** The revision served when this document started; '' until the first answer. */
+      let baseline = ''
+      let baselineKnown = false
+      /**
+       * The first look at the served revision, taken as this document starts:
+       * from here on, any newer revision means the document runs stale code.
+       */
+      const baselineLook = (async () => {
+        const rev = await servedRev()
+        if (rev === '') return
+        baseline = rev
+        baselineKnown = true
+      })()
+      /**
+       * Whether the plugin code served now is newer than the code this document
+       * started with. A missing answer counts as "changed": the refresh is what
+       * the entry promises, and a check that cannot run must not quietly drop it.
+       * @returns whether borrowing the refresh button would install anything.
+       */
+      const codeChanged = async () => {
+        await baselineLook
+        if (!baselineKnown) return true
+        const rev = await servedRev()
+        if (rev === '') return true
+        return rev !== baseline
+      }
+
+      let timer = null
+      const interrupters = []
+      /** Whether a node sits inside this plugin's own sidebar row. */
+      const isEntry = node => {
+        if (node === null || node === undefined || typeof node.closest !== 'function') return false
+        const button = node.closest('button')
+        return button !== null && button.querySelector('svg[data-dsh-panel-entry="' + PANEL_ID + '"]') !== null
+      }
+      const release = () => {
+        generation += 1
+        busy = false
+        if (timer !== null) {
+          clearInterval(timer)
+          timer = null
+        }
+        for (const listener of interrupters.splice(0)) document.removeEventListener(listener[0], listener[1], true)
+      }
+      /**
+       * Starting something else while the press runs keeps that instead: the
+       * intent is dropped so a late rebuild cannot pull the person back here.
+       */
+      const interrupt = event => {
+        if (!busy || isEntry(event.target)) return
+        clearReopenIntent()
+        release()
+      }
+      /** Show this page once the press has answered. */
+      const enter = () => {
+        try {
+          const layout = ctx.get('layout')
+          if (layout && typeof layout.selectPanel === 'function') layout.selectPanel(PANEL_ID)
+          else return false
+          return true
+        } catch (error) {
+          console.warn('[recent-tasks] opening the page after a refresh failed:', error)
+          return false
+        }
+      }
+      const onClick = event => {
+        if (busy || event.defaultPrevented || event.button !== 0) return
+        if (!isEntry(event.target)) return
+        // The row was chosen, so the page is entered afresh: its list starts at
+        // the arrival count whether the click is held for a refresh or not.
+        requestRowReset()
+        const layout = ctx.get('layout')
+        const info = layout && layout.panelInfo && typeof layout.panelInfo.getSnapshot === 'function'
+          ? layout.panelInfo.getSnapshot()
+          : null
+        const active = info === null || info === undefined ? null : info.activePanelId
+        // Clicking the row of the page already on screen keeps its old meaning.
+        if (active === PANEL_ID) return
+        const button = refreshButton()
+        // Without the app's refresh button the entry keeps its plain meaning.
+        if (button === null) return
+        // The press judges the document the person is looking at, so the switch
+        // waits for it: a page read after the Conversation is gone is no check.
+        event.preventDefault()
+        event.stopPropagation()
+        busy = true
+        for (const type of ['pointerdown', 'keydown']) {
+          document.addEventListener(type, interrupt, true)
+          interrupters.push([type, interrupt])
+        }
+        const mine = generation
+        let entered = false
+        const settle = () => {
+          if (entered) return
+          entered = true
+          enter()
+        }
+        /** Borrow the app's press; its own switches and checks decide the rest. */
+        const press = () => {
+          const startedAt = Date.now()
+          writeReopenIntent()
+          try {
+            button.click()
+          } catch (error) {
+            console.warn('[recent-tasks] borrowing the refresh button failed:', error)
+            clearReopenIntent()
+            release()
+            settle()
+            return
+          }
+          timer = setInterval(() => {
+            const elapsed = Date.now() - startedAt
+            if (elapsed < PRESS_ARM_MS) return
+            if (!pressWaiting(button)) {
+              // The press answered where it stood: nothing will reload, so the
+              // intent is spent and the entry does what it always did.
+              clearReopenIntent()
+              release()
+              settle()
+              return
+            }
+            // A press that reloads never reaches this code again; one that is just
+            // slow is not allowed to hold the entry forever.
+            if (!entered && elapsed >= PRESS_WAIT_MS) settle()
+          }, PRESS_POLL_MS)
+        }
+        // A rebuild that installs nothing costs the person seconds: the entry asks
+        // which code is served first, and opens the page at once when nothing moved.
+        void codeChanged().then(changed => {
+          if (mine !== generation) return
+          if (changed) {
+            press()
+            return
+          }
+          release()
+          settle()
+        })
+      }
+      document.addEventListener('click', onClick, true)
+      return () => {
+        document.removeEventListener('click', onClick, true)
+        release()
+      }
+    }
+
+    /**
+     * Bring this page back after the refresh the sidebar entry started.
+     *
+     * The press rebuilds the document, so the click's own navigation is gone
+     * before the new document boots; the intent left in the tab names the page
+     * to open. The main seat is registered asynchronously and the app settles
+     * its own navigation during boot, so the open is retried for a moment and
+     * re-asserted once while the seat it opened is still empty.
+     * @param ctx - Client root context.
+     * @returns disposer stopping the retries.
+     */
+    function restorePageAfterRefresh(ctx) {
+      if (reopenIntent() === null) return () => {}
+      clearReopenIntent()
+      const deadline = Date.now() + REOPEN_WATCH_MS
+      let timer = null
+      let opens = 0
+      let stopped = false
+      /**
+       * The watch ends on its own deadline, or the moment the person touches
+       * anything: from then on their navigation is the one to keep.
+       */
+      const stop = () => {
+        stopped = true
+        if (timer !== null) clearTimeout(timer)
+        timer = null
+        document.removeEventListener('pointerdown', stop, true)
+        document.removeEventListener('keydown', stop, true)
+      }
+      const schedule = ms => {
+        if (stopped || timer !== null) return
+        timer = setTimeout(attempt, ms)
+      }
+      const attempt = () => {
+        timer = null
+        if (stopped) return
+        if (Date.now() >= deadline) {
+          stop()
+          return
+        }
+        const layout = ctx.get('layout')
+        if (layout === undefined || layout === null || typeof layout.selectPanel !== 'function') {
+          schedule(REOPEN_RETRY_MS)
+          return
+        }
+        let active = null
+        try {
+          const info = layout.panelInfo && typeof layout.panelInfo.getSnapshot === 'function'
+            ? layout.panelInfo.getSnapshot()
+            : null
+          active = info === null || info === undefined ? null : info.activePanelId
+        } catch {
+          active = null
+        }
+        // Boot may run its own restore after this plugin applies (it puts the
+        // last Conversation back), so the seat is looked at for a while and
+        // taken back while the person has not chosen anything themselves.
+        if (active !== PANEL_ID) {
+          if (opens >= REOPEN_MAX_OPENS) {
+            stop()
+            return
+          }
+          try {
+            layout.selectPanel(PANEL_ID)
+            opens += 1
+          } catch {
+            schedule(REOPEN_RETRY_MS)
+            return
+          }
+        }
+        schedule(REOPEN_POLL_MS)
+      }
+      document.addEventListener('pointerdown', stop, true)
+      document.addEventListener('keydown', stop, true)
+      schedule(REOPEN_START_MS)
+      return stop
+    }
+
+    /**
+     * Build the face the page receives: live service handles read lazily, so a
+     * service that arrives later (or never) degrades instead of failing boot.
+     * @param ctx - Client root context.
+     * @returns the injected host face.
+     */
+    function createHost(ctx) {
+      return {
+        get sessions() { return ctx.get('sessions') },
+        get workspaces() { return ctx.get('workspaces') },
+        get layout() { return ctx.get('layout') },
+        get uiWorkspace() { return ctx.get('uiWorkspace') },
+        get uiSession() { return ctx.get('uiSession') },
+        get remote() { return ctx.get('remote') },
+        t: (key, params) => ctx.locale.bind(NS)(key, params),
+      }
+    }
+
+    return {
+      // `sessions`/`workspaces` are the two Client services the page reads;
+      // `layout` navigates. `uiWorkspace` is read lazily and stays optional.
+      inject: ['slots', 'locale', 'layout', 'sessions', 'workspaces'],
+      apply(ctx) {
+        ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }), 'recent-tasks: dictionaries')
+        ctx.effect(() => injectStyle(), 'recent-tasks: styles')
+        const host = createHost(ctx)
+        ctx.effect(() => {
+          const slots = ctx.slots
+          const disposers = []
+          // The seats are declared by the shell packages; `slots.inject` defers
+          // each registration until its seat exists and drops it on unload.
+          disposers.push(slots.inject('sidebar.panellist', () => slots.register({
+            name: 'sidebar.panellist',
+            id: PANEL_ID,
+            order: 100,
+            label: () => ctx.locale.bind(NS)('entry.label'),
+            locale: NS,
+          }, PanelGlyph)))
+          disposers.push(slots.inject('main', () => slots.register({
+            name: 'main',
+            key: PANEL_ID,
+            locale: NS,
+            inject: () => ({ host }),
+          }, RecentTasksPage)))
+          return () => {
+            // Hand the main region back to the Conversation before the page key
+            // disappears, and only when this plugin actually owns it.
+            try {
+              const layout = ctx.get('layout')
+              const info = layout && layout.panelInfo && typeof layout.panelInfo.getSnapshot === 'function'
+                ? layout.panelInfo.getSnapshot()
+                : undefined
+              if (info && info.activePanelId === PANEL_ID && typeof layout.selectPanel === 'function') {
+                layout.selectPanel(null)
+              }
+            } catch (error) {
+              console.warn('[recent-tasks] leaving the page on unload failed:', error)
+            }
+            for (let index = disposers.length - 1; index >= 0; index -= 1) {
+              try {
+                disposers[index]()
+              } catch (error) {
+                console.warn('[recent-tasks] releasing a registration failed:', error)
+              }
+            }
+          }
+        }, 'recent-tasks: surfaces')
+        // The entry refreshes the running code before it opens the page, and the
+        // page comes back by itself after the rebuild that press started.
+        ctx.effect(() => watchUnread(ctx), 'recent-tasks: unread watch')
+        ctx.effect(() => installRefreshBridge(ctx), 'recent-tasks: entry refresh')
+        ctx.effect(() => restorePageAfterRefresh(ctx), 'recent-tasks: reopen after refresh')
+      },
+    }
+  },
+})
