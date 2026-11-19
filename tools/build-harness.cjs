@@ -724,10 +724,19 @@ const harness = String.raw`
     const bigStarSvg = bigStar.querySelector('svg')
     const bigStarBox = bigStar.getBoundingClientRect()
     const bigTitleBox = bigStar.closest('.drt-card').querySelector('.drt-cardTitle').getBoundingClientRect()
-    check('星星图标放大到 26px', Math.round(parseFloat(getComputedStyle(bigStarSvg).width)) === 26,
+    check('星星图标放大到 30px', Math.round(parseFloat(getComputedStyle(bigStarSvg).width)) === 30,
       getComputedStyle(bigStarSvg).width)
-    check('星星点击区放大到 38px', Math.round(bigStarBox.width) === 38 && Math.round(bigStarBox.height) === 38,
-      Math.round(bigStarBox.width) + 'x' + Math.round(bigStarBox.height))
+    const starRail = bigStar.closest('.drt-cardRail')
+    const cardBox0 = bigStar.closest('.drt-card').getBoundingClientRect()
+    const railBox = starRail ? starRail.getBoundingClientRect() : { width: 0, right: 0 }
+    check('星星改成右侧竖条', starRail !== null && Math.round(railBox.width) === 48 && Math.abs(railBox.right - cardBox0.right) <= 2,
+      Math.round(railBox.width) + ' 宽 / 右差 ' + Math.round(Math.abs(railBox.right - cardBox0.right)))
+    check('竖条和内容之间有分隔线', starRail !== null && parseFloat(getComputedStyle(starRail).borderLeftWidth) === 1,
+      starRail === null ? 'no rail' : getComputedStyle(starRail).borderLeftWidth)
+    check('星星点击区撑满竖条', Math.abs(bigStarBox.width - railBox.width) <= 1 && bigStarBox.height >= cardBox0.height - 4,
+      Math.round(bigStarBox.width) + 'x' + Math.round(bigStarBox.height) + ' / 卡高 ' + Math.round(cardBox0.height))
+    check('星星竖向居中', Math.abs((bigStarBox.top + bigStarBox.height / 2) - (cardBox0.top + cardBox0.height / 2)) <= 2,
+      Math.round(bigStarBox.top + bigStarBox.height / 2) + ' / ' + Math.round(cardBox0.top + cardBox0.height / 2))
     check('标题让开星星，不压到图标', bigTitleBox.right <= bigStarBox.left,
       Math.round(bigTitleBox.right) + ' / ' + Math.round(bigStarBox.left))
     const firstCard = bigStar.closest('.drt-card')

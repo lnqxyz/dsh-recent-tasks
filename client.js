@@ -183,7 +183,7 @@ window.__ModuleLoader__.load({
       '.drt-cardGrid.is-unread{max-height:min(30vh,260px);overflow-y:auto;overscroll-behavior:contain}',
       '.drt-cardGrid.is-fav{max-height:min(28vh,240px);overflow-y:auto;overscroll-behavior:contain}',
       '.drt-cardGrid.is-done{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}',
-      '.drt-card{position:relative;display:flex;flex-direction:column;gap:6px;height:100%;min-height:100px;box-sizing:border-box;padding:14px 16px 13px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-base);color:inherit;font-family:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease}',
+      '.drt-card{position:relative;display:flex;flex-direction:column;gap:6px;height:100%;min-height:100px;box-sizing:border-box;padding:14px 64px 13px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-base);color:inherit;font-family:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease}',
       '.drt-card:hover{transform:translateY(-1px)}',
       '.drt-card:active{transform:translateY(0)}',
       '.drt-card:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}',
@@ -203,9 +203,15 @@ window.__ModuleLoader__.load({
       '.drt-card.is-pending::before{content:none}',
       '.drt-card.is-pending:hover{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, var(--dsw-alias-bg-base));box-shadow:inset 3px 0 0 color-mix(in srgb, var(--dsw-alias-state-error-primary) 88%, transparent),0 14px 26px -14px color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, transparent)}',
       '.drt-cardDot.is-fav{background:var(--dsw-alias-state-warn-primary);opacity:1}',
-      '.drt-star{position:absolute;top:5px;right:5px;z-index:2;display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;border:none;border-radius:10px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;opacity:.7;transition:opacity .16s ease,color .16s ease,background-color .16s ease,transform .16s ease}',
-      '.drt-star:hover{opacity:1;background:var(--dsw-alias-interactive-bg-hover);transform:scale(1.06)}',
-      '.drt-star:focus-visible{opacity:1;outline:2px solid var(--dsw-alias-state-warn-primary);outline-offset:1px}',
+      // The star sits in a full-height rail down the right edge: one big,
+      // predictable target per card instead of a small corner hit zone. The
+      // hairline and faint wash keep it reading as a strip, not a floating glyph.
+      '.drt-cardRail{position:absolute;top:1px;right:1px;bottom:1px;z-index:2;box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:48px;border-left:1px solid color-mix(in srgb, var(--dsw-alias-label-primary) 9%, transparent);border-radius:0 11px 11px 0;background:color-mix(in srgb, var(--dsw-alias-label-primary) 3%, transparent)}',
+      '.drt-star{position:static;display:inline-flex;align-items:center;justify-content:center;width:100%;height:100%;padding:0;border:none;border-radius:0 11px 11px 0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;opacity:.72;transition:opacity .16s ease,color .16s ease,background-color .16s ease}',
+      '.drt-star svg{transition:transform .18s cubic-bezier(.34,1.56,.64,1)}',
+      '.drt-star:hover{opacity:1;background:var(--dsw-alias-interactive-bg-hover)}',
+      '.drt-star:hover svg{transform:scale(1.12)}',
+      '.drt-star:focus-visible{opacity:1;outline:2px solid var(--dsw-alias-state-warn-primary);outline-offset:-3px}',
       '.drt-star.is-on{color:var(--dsw-alias-state-warn-primary);opacity:1}',
       '.drt-card:hover .drt-star{opacity:.92}',
       '.drt-card:hover .drt-star.is-on{opacity:1}',
@@ -213,7 +219,7 @@ window.__ModuleLoader__.load({
       '.drt-card.is-fav{animation:drt-fav-in .22s cubic-bezier(.22,1,.36,1)}',
       '@keyframes drt-star-pop{0%{transform:scale(.7)}60%{transform:scale(1.16)}100%{transform:scale(1)}}',
       '@keyframes drt-fav-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}',
-      '.drt-cardHead{position:relative;z-index:1;display:flex;align-items:flex-start;gap:8px;min-width:0;padding-right:38px}',
+      '.drt-cardHead{position:relative;z-index:1;display:flex;align-items:flex-start;gap:8px;min-width:0}',
       '.drt-cardDot{flex:none;width:8px;height:8px;margin-top:6px;border-radius:50%;background:var(--dsw-alias-label-tertiary);opacity:.45}',
       '.drt-cardDot.is-running{background:var(--drt-run-dot);opacity:1;box-shadow:0 0 0 3px color-mix(in srgb, var(--drt-run-dot) 16%, transparent);animation:drt-breathe 1.8s ease-in-out infinite}',
       '.drt-cardDot.is-unread{background:var(--drt-unread-dot);opacity:1;animation:none}',
@@ -231,7 +237,7 @@ window.__ModuleLoader__.load({
       '@property --drt-angle{syntax:"<angle>";inherits:false;initial-value:0deg}',
       '@keyframes drt-spin{to{--drt-angle:1turn}}',
       '@keyframes drt-sheen{0%{transform:translateX(-110%)}55%,100%{transform:translateX(230%)}}',
-      '@media (prefers-reduced-motion:reduce){.drt-card.is-running,.drt-card.is-running::before,.drt-card.is-running::after{animation:none}.drt-headDot,.drt-cardDot,.drt-star.is-on svg,.drt-card.is-fav{animation:none}.drt-card,.drt-star{transition:none}.drt-card:hover,.drt-card:active,.drt-star:hover{transform:none}}',
+      '@media (prefers-reduced-motion:reduce){.drt-card.is-running,.drt-card.is-running::before,.drt-card.is-running::after{animation:none}.drt-headDot,.drt-cardDot,.drt-star.is-on svg,.drt-card.is-fav{animation:none}.drt-card,.drt-star,.drt-star svg{transition:none}.drt-card:hover,.drt-card:active,.drt-star:hover,.drt-star:hover svg{transform:none}}',
       '.drt-empty{margin:0;padding:8px 2px;font-size:13px;line-height:1.6;color:var(--dsw-alias-label-tertiary)}',
       '.drt-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.36)}',
       '.drt-dialog{display:flex;flex-direction:column;width:min(460px,100%);max-height:min(560px,78vh);overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.3)}',
@@ -1038,31 +1044,33 @@ window.__ModuleLoader__.load({
             h('span', { className: 'drt-cardTitle' }, row.title),
           ),
           cardMeta(row),
-          h('button', {
-            type: 'button',
-            className: 'drt-star' + (favorite ? ' is-on' : ''),
-            'aria-pressed': favorite ? 'true' : 'false',
-            'aria-label': starLabel,
-            title: starLabel,
-            onClick: event => {
-              event.stopPropagation()
-              toggleFavorite(row.id)
+          h('span', { className: 'drt-cardRail' },
+            h('button', {
+              type: 'button',
+              className: 'drt-star' + (favorite ? ' is-on' : ''),
+              'aria-pressed': favorite ? 'true' : 'false',
+              'aria-label': starLabel,
+              title: starLabel,
+              onClick: event => {
+                event.stopPropagation()
+                toggleFavorite(row.id)
+              },
             },
-          },
-            h('svg', {
-              viewBox: '0 0 20 20',
-              width: 26,
-              height: 26,
-              'aria-hidden': 'true',
-              focusable: 'false',
-            },
-              h('path', {
-                d: 'M10 2.7l2.25 4.56 5.03.73-3.64 3.55.86 5.01L10 14.17l-4.5 2.38.86-5.01L2.72 7.99l5.03-.73z',
-                fill: favorite ? 'currentColor' : 'none',
-                stroke: 'currentColor',
-                strokeWidth: 1.4,
-                strokeLinejoin: 'round',
-              }),
+              h('svg', {
+                viewBox: '0 0 20 20',
+                width: 30,
+                height: 30,
+                'aria-hidden': 'true',
+                focusable: 'false',
+              },
+                h('path', {
+                  d: 'M10 2.7l2.25 4.56 5.03.73-3.64 3.55.86 5.01L10 14.17l-4.5 2.38.86-5.01L2.72 7.99l5.03-.73z',
+                  fill: favorite ? 'currentColor' : 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: 1.4,
+                  strokeLinejoin: 'round',
+                }),
+              ),
             ),
           ),
         )
