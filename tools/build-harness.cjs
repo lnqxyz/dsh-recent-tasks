@@ -724,12 +724,32 @@ const harness = String.raw`
     const bigStarSvg = bigStar.querySelector('svg')
     const bigStarBox = bigStar.getBoundingClientRect()
     const bigTitleBox = bigStar.closest('.drt-card').querySelector('.drt-cardTitle').getBoundingClientRect()
-    check('星星图标放大到 18px', Math.round(parseFloat(getComputedStyle(bigStarSvg).width)) === 18,
+    check('星星图标放大到 26px', Math.round(parseFloat(getComputedStyle(bigStarSvg).width)) === 26,
       getComputedStyle(bigStarSvg).width)
-    check('星星点击区放大到 30px', Math.round(bigStarBox.width) === 30 && Math.round(bigStarBox.height) === 30,
+    check('星星点击区放大到 38px', Math.round(bigStarBox.width) === 38 && Math.round(bigStarBox.height) === 38,
       Math.round(bigStarBox.width) + 'x' + Math.round(bigStarBox.height))
     check('标题让开星星，不压到图标', bigTitleBox.right <= bigStarBox.left,
       Math.round(bigTitleBox.right) + ' / ' + Math.round(bigStarBox.left))
+    const firstCard = bigStar.closest('.drt-card')
+    check('卡片标题字号 16px', Math.round(parseFloat(getComputedStyle(firstCard.querySelector('.drt-cardTitle')).fontSize)) === 16,
+      getComputedStyle(firstCard.querySelector('.drt-cardTitle')).fontSize)
+    check('卡片说明字号 12.5px', Math.round(parseFloat(getComputedStyle(firstCard.querySelector('.drt-cardMeta')).fontSize) * 10) === 125,
+      getComputedStyle(firstCard.querySelector('.drt-cardMeta')).fontSize)
+    check('卡片最小高度 100px', Math.round(parseFloat(getComputedStyle(firstCard).minHeight)) === 100,
+      getComputedStyle(firstCard).minHeight)
+    // The width ladder: three columns at full width, two and one as the page narrows.
+    const rightGrid = rt.container.querySelector('.drt-cardGrid')
+    const rtPage = rt.container.querySelector('.drt-page')
+    check('宽屏下卡片三列封顶', getComputedStyle(rightGrid).gridTemplateColumns.split(' ').length === 3,
+      getComputedStyle(rightGrid).gridTemplateColumns)
+    rtPage.style.width = '760px'
+    check('中等宽度降到两列', getComputedStyle(rightGrid).gridTemplateColumns.split(' ').length === 2,
+      getComputedStyle(rightGrid).gridTemplateColumns)
+    rtPage.style.width = '560px'
+    check('窄宽度降到一列', getComputedStyle(rightGrid).gridTemplateColumns.split(' ').length === 1,
+      getComputedStyle(rightGrid).gridTemplateColumns)
+    rtPage.style.width = ''
+    getComputedStyle(rightGrid).gridTemplateColumns
     const beforeStars = rt.calls.filter(call => call[0] === 'uiWorkspace.openSession').length
     click(rt.container.querySelector('.drt-card.is-unread .drt-star'))
     await tick()
