@@ -22,6 +22,8 @@ window.__ModuleLoader__.load({
     const FAV_KEY = 'dsh.recent-tasks.favorites.v1'
     /** Activity window required by the entry: sessions touched within this span. */
     const ACTIVITY_WINDOW_MS = 10 * 24 * 60 * 60 * 1000
+    /** The sweep button keeps this much history on screen and archives what is older. */
+    const SWEEP_KEEP_DAYS = 7
     /** Rows shown on arrival; a full page leaves room for more than the short sidebar list. */
     const COLLAPSED_ROWS = 15
     /** Extra rows revealed by one 【展开其余】, so a long history stays scannable. */
@@ -31,6 +33,8 @@ window.__ModuleLoader__.load({
     const MINUTE_MS = 60 * 1000
     const HOUR_MS = 60 * MINUTE_MS
     const DAY_MS = 24 * HOUR_MS
+    /** What the sweep button leaves alone: anything touched inside this span. */
+    const SWEEP_KEEP_MS = SWEEP_KEEP_DAYS * DAY_MS
     /** Per-tab intent: after a refresh rebuilds the page, open this panel again. */
     const REOPEN_KEY = 'dsh.recent-tasks.reopen.v1'
     /** A rebuild takes seconds; an older intent describes a click the person has left behind. */
@@ -65,6 +69,21 @@ window.__ModuleLoader__.load({
       'page.loading': '正在读取会话…',
       'page.more': '展开其余 {n} 个对话',
       'page.less': '收起',
+      'page.sweep': '只留 7 天',
+      'page.sweepHint': '把 7 天以前的会话归档，页面上只留下最近 7 天的',
+      'page.sweeping': '整理中…',
+      'sweep.title': '归档更早的会话',
+      'sweep.hint': '这会把 7 天以前的 {n} 个会话移进归档，页面上只留下最近 7 天的。归档可以恢复，不会删除任何内容。',
+      'sweep.favNote': '另外 {n} 个更早的收藏会留在收藏区，不会被归档。',
+      'sweep.liveNote': '其中 {n} 个还在运行的先不动，等它们跑完下次再清。',
+      'sweep.confirm': '归档 {n} 个',
+      'sweep.cancel': '取消',
+      'sweep.none': '7 天以前的会话已经没有了。',
+      'sweep.noneFav': '7 天以前的会话都在收藏里，这里没有可归档的。',
+      'sweep.noneLive': '7 天以前的会话都还在运行，等它们跑完再清。',
+      'sweep.done': '已归档 {n} 个会话。',
+      'sweep.failed': '{n} 个没能归档：{message}',
+      'sweep.unavailable': '当前界面不支持归档会话。',
       'section.running': '正在运行',
       'section.fav': '收藏',
       'section.unread': '未读',
@@ -108,6 +127,21 @@ window.__ModuleLoader__.load({
       'page.loading': 'Loading sessions…',
       'page.more': 'Show the remaining {n}',
       'page.less': 'Show less',
+      'page.sweep': 'Keep 7 days',
+      'page.sweepHint': 'Archive everything older than 7 days, keeping only the last week on this page',
+      'page.sweeping': 'Tidying…',
+      'sweep.title': 'Archive older sessions',
+      'sweep.hint': 'This moves the {n} sessions older than 7 days into the archive and leaves only the last week here. Archiving is reversible and deletes nothing.',
+      'sweep.favNote': '{n} older starred sessions stay in Favorites and are not archived.',
+      'sweep.liveNote': '{n} of them are still running and stay put until they finish.',
+      'sweep.confirm': 'Archive {n}',
+      'sweep.cancel': 'Cancel',
+      'sweep.none': 'Nothing older than 7 days is left.',
+      'sweep.noneFav': 'Every session older than 7 days is starred, so there is nothing to archive.',
+      'sweep.noneLive': 'Every session older than 7 days is still running; clear them once they finish.',
+      'sweep.done': 'Archived {n} sessions.',
+      'sweep.failed': '{n} could not be archived: {message}',
+      'sweep.unavailable': 'This interface cannot archive sessions.',
       'section.running': 'Running now',
       'section.fav': 'Favorites',
       'section.unread': 'Unread',
@@ -146,19 +180,27 @@ window.__ModuleLoader__.load({
       // Tone palette: 正在运行 is the light blue that keeps moving, 未读 the green
       // that waits for you. Both are pulled from the static ramp so the plugin
       // never fights the theme's own state colours.
-      '.drt-root{height:100%;min-height:0;overflow:hidden;--drt-run:var(--dsw-static-blue-400);--drt-run-dot:var(--dsw-static-blue-500);--drt-run-a:7%;--drt-run-b:15%;--drt-unread:var(--dsw-static-green-500);--drt-unread-dot:var(--dsw-static-green-500);--drt-unread-a:6%;--drt-unread-b:11%;--drt-sheen-lo:30%;--drt-sheen-hi:.30;--drt-sheen-tail:14%;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family)}',
+      '.drt-root{height:100%;min-height:0;overflow:hidden;--drt-run:var(--dsw-static-blue-300);--drt-run-dot:var(--dsw-static-blue-400);--drt-run-a:8%;--drt-run-b:16%;--drt-unread:var(--dsw-static-green-500);--drt-unread-dot:var(--dsw-static-green-500);--drt-unread-a:6%;--drt-unread-b:11%;--drt-sheen-lo:30%;--drt-sheen-hi:.30;--drt-sheen-tail:14%;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family)}',
       // A tint that reads on a dark page needs more of the colour, not less.
-      'body[data-ds-dark-theme] .drt-root{--drt-run-dot:var(--dsw-static-blue-300);--drt-run-a:11%;--drt-run-b:21%;--drt-unread-dot:var(--dsw-static-green-400);--drt-unread-a:9%;--drt-unread-b:15%;--drt-sheen-lo:26%;--drt-sheen-hi:.10;--drt-sheen-tail:10%}',
+      'body[data-ds-dark-theme] .drt-root{--drt-run-dot:var(--dsw-static-blue-300);--drt-run-a:13%;--drt-run-b:23%;--drt-unread-dot:var(--dsw-static-green-400);--drt-unread-a:9%;--drt-unread-b:15%;--drt-sheen-lo:26%;--drt-sheen-hi:.10;--drt-sheen-tail:10%}',
       '.drt-page{height:100%;min-height:0;box-sizing:border-box;display:flex;flex-direction:column;gap:14px;padding:20px 22px 16px;container-type:inline-size}',
       '.drt-header{flex:none;display:flex;align-items:center;gap:10px}',
       '.drt-title{margin:0;flex:1;min-width:0;font-size:18px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       '.drt-actions{flex:none;display:flex;align-items:center;gap:8px}',
       '.drt-ghost{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);padding:6px 13px;font-family:inherit;font-size:13px;line-height:1.4;cursor:pointer}',
       '.drt-ghost:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
+      // The sweep action is quiet by design: it changes a lot of rows at once, so
+      // it must not look like the primary 【+】 next to it.
+      '.drt-sweep{flex:none;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);padding:6px 11px;font-family:inherit;font-size:13px;line-height:1.4;cursor:pointer;transition:background .12s ease,color .12s ease,border-color .12s ease}',
+      '.drt-sweep:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}',
+      '.drt-sweep:disabled{opacity:.55;cursor:default}',
+      '.drt-sweep svg{flex:none;display:block}',
       '.drt-add{flex:none;display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;border:none;border-radius:9px;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground);font-family:inherit;font-size:18px;font-weight:600;line-height:1;cursor:pointer}',
       '.drt-add:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}',
       '.drt-add:disabled{opacity:.55;cursor:default}',
       '.drt-notice{margin:0;font-size:12px;line-height:1.6;color:var(--dsw-alias-state-error-primary)}',
+      '.drt-notice.is-info{color:var(--dsw-alias-label-secondary)}',
+      '.drt-notice.is-success{color:var(--dsw-alias-state-success-primary)}',
       '.drt-foot{flex:none;display:flex;justify-content:center}',
       '.drt-more{border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-state-business-primary);padding:7px 14px;font-family:inherit;font-size:13.5px;cursor:pointer}',
       '.drt-more:hover{background:var(--dsw-alias-interactive-bg-hover)}',
@@ -815,6 +857,8 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState(false)
       const [chooser, setChooser] = React.useState(null)
       const [notice, setNotice] = React.useState(null)
+      const [sweeper, setSweeper] = React.useState(null)
+      const [sweeping, setSweeping] = React.useState(false)
 
       const favoriteSet = React.useMemo(() => new Set(favoriteIds), [favoriteIds])
       const rows = React.useMemo(
@@ -1006,6 +1050,116 @@ window.__ModuleLoader__.load({
         }
         setNotice(null)
         setChooser({ workspaces: workspaceRows(host), picking: false, error: null })
+      }
+
+      /**
+       * Archives one Session through whichever service the build exposes. The
+       * page never stops a run to force this through: a Session still working is
+       * left for a later sweep instead.
+       * @param id - the Session to archive.
+       */
+      const archiveOne = async id => {
+        const uiWorkspace = host.uiWorkspace
+        if (uiWorkspace && typeof uiWorkspace.archiveSession === 'function') {
+          await uiWorkspace.archiveSession(id)
+          return
+        }
+        const workspaces = host.workspaces
+        if (workspaces && typeof workspaces.archiveSession === 'function') {
+          await workspaces.archiveSession(id)
+          return
+        }
+        throw new Error(t('sweep.unavailable'))
+      }
+
+      const canArchive = () => {
+        const uiWorkspace = host.uiWorkspace
+        if (uiWorkspace && typeof uiWorkspace.archiveSession === 'function') return true
+        const workspaces = host.workspaces
+        return Boolean(workspaces && typeof workspaces.archiveSession === 'function')
+      }
+
+      /**
+       * What the sweep would archive, read straight from the Session list rather
+       * than from `rows`: rows stop at the ten-day window, and an old session
+       * must still be swept even though this page never lists it.
+       * Starred and running sessions are counted aside and left in place.
+       */
+      const sweepPlan = React.useMemo(() => {
+        const plan = { targets: [], kept: 0, live: 0 }
+        if (!listState || !listState.byId || !Array.isArray(listState.ids)) return plan
+        const archived = toIdSet(workspaceState ? workspaceState.archivedSessionIds : undefined)
+        const statuses = statusState && typeof statusState.get === 'function' ? statusState : null
+        for (const id of listState.ids) {
+          const session = listState.byId[id]
+          if (!session || session.origin === 'subagent') continue
+          if (archived.has(id)) continue
+          const at = typeof session.updatedAt === 'number' ? session.updatedAt : 0
+          if (at <= 0 || now - at <= SWEEP_KEEP_MS) continue
+          if (favoriteSet.has(id)) {
+            plan.kept += 1
+            continue
+          }
+          const status = statuses === null ? undefined : statuses.get(id)
+          const pending = pendingKindOf(status)
+          const running = pending !== undefined || session.running === true || (status !== undefined && status.running === true)
+          if (running) {
+            plan.live += 1
+            continue
+          }
+          plan.targets.push(id)
+        }
+        return plan
+      }, [listState, workspaceState, statusState, favoriteSet, now])
+
+      const onSweep = () => {
+        if (busy || sweeping) return
+        if (!canArchive()) {
+          setNotice({ tone: 'error', text: t('sweep.unavailable') })
+          return
+        }
+        setNotice(null)
+        if (sweepPlan.targets.length === 0) {
+          const key = sweepPlan.kept > 0
+            ? 'sweep.noneFav'
+            : sweepPlan.live > 0 ? 'sweep.noneLive' : 'sweep.none'
+          setNotice({ tone: 'info', text: t(key) })
+          return
+        }
+        setSweeper({
+          ids: sweepPlan.targets.slice(),
+          kept: sweepPlan.kept,
+          live: sweepPlan.live,
+        })
+      }
+
+      const runSweep = async () => {
+        if (sweeper === null || sweeping) return
+        const ids = sweeper.ids
+        setSweeping(true)
+        setSweeper(null)
+        let done = 0
+        let message = ''
+        for (const id of ids) {
+          try {
+            await archiveOne(id)
+            done += 1
+          } catch (error) {
+            if (message === '') message = messageOf(error)
+          }
+        }
+        setSweeping(false)
+        const failed = ids.length - done
+        if (done > 0) {
+          setNotice({
+            tone: failed === 0 ? 'success' : 'error',
+            text: failed === 0
+              ? t('sweep.done', { n: done })
+              : t('sweep.failed', { n: failed, message }),
+          })
+          return
+        }
+        setNotice({ tone: 'error', text: t('sweep.failed', { n: failed, message }) })
       }
 
       const foot = doneRows.length > COLLAPSED_ROWS
@@ -1218,11 +1372,52 @@ window.__ModuleLoader__.load({
         ),
       )
 
+      const sweepDialog = sweeper === null ? null : h('div', {
+        className: 'drt-overlay',
+        onMouseDown: event => {
+          if (event.target === event.currentTarget) setSweeper(null)
+        },
+      },
+        h('div', {
+          className: 'drt-dialog',
+          role: 'dialog',
+          'aria-modal': 'true',
+          'aria-label': t('sweep.title'),
+        },
+          h('div', { className: 'drt-dialogHead' },
+            h('h3', { className: 'drt-dialogTitle' }, t('sweep.title')),
+          ),
+          h('p', { className: 'drt-dialogHint' }, t('sweep.hint', { n: sweeper.ids.length })),
+          sweeper.kept > 0 ? h('p', { className: 'drt-dialogHint' }, t('sweep.favNote', { n: sweeper.kept })) : null,
+          sweeper.live > 0 ? h('p', { className: 'drt-dialogHint' }, t('sweep.liveNote', { n: sweeper.live })) : null,
+          h('div', { className: 'drt-dialogFoot' },
+            h('button', {
+              type: 'button',
+              className: 'drt-ghost',
+              onClick: () => setSweeper(null),
+            }, t('sweep.cancel')),
+            h('button', {
+              type: 'button',
+              className: 'drt-primary',
+              onClick: () => { void runSweep() },
+            }, t('sweep.confirm', { n: sweeper.ids.length })),
+          ),
+        ),
+      )
+
       return h('div', { className: 'drt-root', 'data-dsh-plugin': 'recent-tasks' },
         h('div', { className: 'drt-page' },
           h('header', { className: 'drt-header' },
             h('h2', { className: 'drt-title' }, t('page.title')),
             h('div', { className: 'drt-actions' },
+              h('button', {
+                type: 'button',
+                className: 'drt-sweep',
+                disabled: busy || sweeping,
+                title: t('page.sweepHint'),
+                'aria-label': t('page.sweepHint'),
+                onClick: onSweep,
+              }, SweepGlyph(), t(sweeping ? 'page.sweeping' : 'page.sweep')),
               h('button', {
                 type: 'button',
                 className: 'drt-ghost',
@@ -1238,10 +1433,31 @@ window.__ModuleLoader__.load({
               }, '+'),
             ),
           ),
-          notice ? h('p', { className: 'drt-notice' }, notice.text) : null,
+          notice ? h('p', { className: 'drt-notice' + (notice.tone === 'info' ? ' is-info' : notice.tone === 'success' ? ' is-success' : '') }, notice.text) : null,
           body,
         ),
         dialog,
+        sweepDialog,
+      )
+    }
+
+    /** Glyph on the sweep button: a broom-ish archive arrow into a box. */
+    function SweepGlyph() {
+      return h('svg', {
+        viewBox: '0 0 16 16',
+        width: 13,
+        height: 13,
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.4,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        'aria-hidden': 'true',
+      },
+        h('path', { d: 'M2 12.4h12' }),
+        h('path', { d: 'M4.2 9.4h7.6l-.9 3H5.1z' }),
+        h('path', { d: 'M8 2.4v4.2' }),
+        h('path', { d: 'M6.3 5.2 8 6.9l1.7-1.7' }),
       )
     }
 

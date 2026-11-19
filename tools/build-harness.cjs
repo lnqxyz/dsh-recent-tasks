@@ -244,6 +244,50 @@ const harness = String.raw`
       }
       ids.push(otherSessionId)
     }
+    // Sessions older than the 7 days the sweep keeps. The first three are still
+    // inside the 10-day listing window, the rest already fell out of it, and the
+    // sweep has to reach both.
+    if (opts.old === true) {
+      const day = 24 * 60 * 60 * 1000
+      const ages = [8, 9, 9.5, 11, 12, 13]
+      for (let index = 0; index < ages.length; index += 1) {
+        const id = 'o' + String(index + 1).padStart(2, '0')
+        ids.push(id)
+        sessionsById[id] = {
+          id,
+          displayTitle: '旧对话 ' + (index + 1),
+          updatedAt: now - day * ages[index],
+          cwd: '/Users/lnq/工作/项目A',
+          running: false,
+        }
+      }
+    }
+    // Sessions between the sweep cutoff and the ten-day window: they are on the
+    // page right now, and the sweep is the thing that removes them from it.
+    for (let index = 0; index < (opts.pageOld === undefined ? 0 : opts.pageOld); index += 1) {
+      const id = 'm' + String(index + 1).padStart(2, '0')
+      ids.push(id)
+      sessionsById[id] = {
+        id,
+        displayTitle: '临过期对话 ' + (index + 1),
+        updatedAt: now - 24 * 60 * 60 * 1000 * (8 + index),
+        cwd: '/Users/lnq/工作/项目A',
+        running: false,
+      }
+    }
+    // Sessions older than the ten-day listing window, so the sweep button has
+    // something to archive. They never show up in the page's own rows.
+    for (let index = 0; index < (opts.oldSessions === undefined ? 0 : opts.oldSessions); index += 1) {
+      const id = 'o' + String(index + 1).padStart(2, '0')
+      ids.push(id)
+      sessionsById[id] = {
+        id,
+        displayTitle: '旧对话 ' + (index + 1),
+        updatedAt: now - 24 * 60 * 60 * 1000 * (8 + index),
+        cwd: '/Users/lnq/工作/项目A',
+        running: false,
+      }
+    }
     const runningIds = opts.running === undefined ? ['s01', 's07'] : opts.running
     for (const id of runningIds) {
       if (sessionsById[id]) sessionsById[id].running = true
@@ -256,7 +300,8 @@ const harness = String.raw`
           { workspaceId: 'w2', path: '/Users/lnq/工作/项目B', title: '', sessionIds: [] },
         ]
       : opts.workspaces
-    const workspaceState = { items: workspaceItems, archivedSessionIds: [] }
+    let workspaceState = { items: workspaceItems, archivedSessionIds: [] }
+    const workspaceListeners = []
 
     // Official DSH shape: UiSession.sessionStatus → Map<id, {running, pendingInteraction, completionUnread}>.
     const statusById = new Map()
@@ -271,6 +316,13 @@ const harness = String.raw`
       const previous = statusById.get(id) || { running: undefined, pendingInteraction: undefined, completionUnread: false }
       statusById.set(id, { ...previous, ...patch })
       publishStatus()
+    }
+    function publishWorkspace() {
+      for (const listener of workspaceListeners.slice()) listener()
+    }
+    function installArchived(archivedIds) {
+      workspaceState = { items: workspaceState.items, archivedSessionIds: archivedIds.slice() }
+      publishWorkspace()
     }
 
     // Mirrors the framework's single pending navigation slot.
@@ -314,11 +366,41 @@ const harness = String.raw`
         },
       },
       workspaces: {
-        list: { getSnapshot: () => workspaceState, subscribe: () => () => {} },
+        list: {
+          getSnapshot: () => workspaceState,
+          subscribe: listener => {
+            workspaceListeners.push(listener)
+            return () => {
+              const at = workspaceListeners.indexOf(listener)
+              if (at >= 0) workspaceListeners.splice(at, 1)
+            }
+          },
+        },
         create: async input => {
           calls.push(['workspaces.create', input])
           if (opts.createFails) throw new Error('文件夹不可用')
           return { workspace: { workspaceId: 'w-created', path: input.path }, created: true }
+        },
+        // Official contract: throws while the session still has work, and
+        // installs the whole archive set on success. The real Host replaces that
+        // set on every call, so a fresh snapshot object is installed each time —
+        // an in-place mutation would never reach a subscriber.
+        archiveSession: async (id, options) => {
+          calls.push(['workspaces.archiveSession', id, options])
+          if (opts.archiveFails && opts.archiveFails.indexOf(id) >= 0) {
+            const error = new Error('这个会话还在运行')
+            error.name = 'WorkspaceArchiveError'
+            throw error
+          }
+          if (opts.archiveFailsAll) {
+            const error = new Error('归档服务暂时不可用')
+            error.name = 'WorkspaceArchiveError'
+            throw error
+          }
+          const archived = workspaceState.archivedSessionIds.slice()
+          if (archived.indexOf(id) === -1) archived.push(id)
+          installArchived(archived)
+          return { archivedSessionIds: archived }
         },
       },
       layout: {
@@ -367,9 +449,19 @@ const harness = String.raw`
           // replaceMain(..., 'reveal') closes this page by itself.
           services.layout.selectPanel(null)
         },
+        archiveSession: async (id, options) => {
+          calls.push(['uiWorkspace.archiveSession', id, options])
+          await services.workspaces.archiveSession(id, options)
+        },
         pickDirectory: async () => '/Users/lnq/工作/新文件夹',
         listDirectory: async () => [],
       },
+    }
+
+    // A build whose services cannot archive anything: the page must degrade.
+    if (opts.noArchive) {
+      delete services.uiWorkspace.archiveSession
+      delete services.workspaces.archiveSession
     }
 
     if (opts.remote) {
@@ -523,6 +615,33 @@ const harness = String.raw`
         return { running: pick('.drt-card.is-running'), unread: pick('.drt-card.is-unread'), done: pick('.drt-card.is-done') }
       },
       text() { return container.textContent },
+      /** The archive set the workspaces service reports. */
+      archivedIds() { return workspaceState.archivedSessionIds.slice() },
+      /** The header's sweep button, or null when the header lacks it. */
+      sweepButton() { return container.querySelector('.drt-sweep') },
+      sweepText() { const el = container.querySelector('.drt-sweep'); return el ? el.textContent : '' },
+      noticeText() { const el = container.querySelector('.drt-notice'); return el ? el.textContent : '' },
+      noticeClass() { const el = container.querySelector('.drt-notice'); return el ? el.className : '' },
+      dialogText() {
+        const dialogs = Array.from(container.querySelectorAll('.drt-dialog'))
+        return dialogs.map(el => el.textContent).join(' | ')
+      },
+      dialogConfirm() {
+        const dialogs = Array.from(container.querySelectorAll('.drt-dialog'))
+        for (const dialog of dialogs) {
+          const buttons = Array.from(dialog.querySelectorAll('.drt-primary'))
+          if (buttons.length > 0) return buttons[buttons.length - 1]
+        }
+        return null
+      },
+      dialogCancel() {
+        const dialogs = Array.from(container.querySelectorAll('.drt-dialog'))
+        for (const dialog of dialogs) {
+          const buttons = Array.from(dialog.querySelectorAll('.drt-ghost'))
+          if (buttons.length > 0) return buttons[buttons.length - 1]
+        }
+        return null
+      },
       setActive(id) { activePanelId = id },
       dispose() {
         for (let index = disposers.length - 1; index >= 0; index -= 1) {
@@ -615,7 +734,10 @@ const harness = String.raw`
       }
       if (location.search.indexOf('dark') >= 0) document.body.setAttribute('data-ds-dark-theme', '')
       const many = location.search.indexOf('many') >= 0 ? ['s01','s02','s03','s04','s05','s06','s07','s08','s09','s10'] : undefined
-      const rt0 = makeRuntime(location.search.indexOf('none') >= 0 ? { running: [] } : many ? { running: many } : undefined)
+      const old = location.search.indexOf('old') >= 0 ? { oldSessions: 5 } : {}
+      const rt0 = makeRuntime(location.search.indexOf('none') >= 0
+        ? { running: [], ...old }
+        : many ? { running: many, ...old } : old)
       if (location.search.indexOf('pending') >= 0) {
         rt0.setPending('s01', 'approval')
         rt0.setPending('s02', 'plan-review')
@@ -631,6 +753,10 @@ const harness = String.raw`
         // person, s05 is the plain completed one.
         rt0.finishRun('s02')
         rt0.setPending('s03', 'approval')
+      }
+      if (location.search.indexOf('sweepdialog') >= 0) {
+        // The confirm sheet is what a screenshot of this feature has to show.
+        click(rt0.sweepButton())
       }
       document.title = 'preview'
       // ?freeze=1.2 pauses every animation 1.2s in, so screenshots can capture
@@ -1375,6 +1501,99 @@ const harness = String.raw`
     await tick()
     check('全在等我时区块点是琥珀态', rt.headDotClass().indexOf('is-pending') >= 0 && rt.headDotClass().indexOf('is-idle') < 0, rt.headDotClass())
     check('全在等我时仍然只算一条在运行', rt.zoneCount('') === '1' && rt.lives() === 1, rt.counts().join('|'))
+    rt.unmount()
+
+    // 21. the sweep button: archive everything older than 7 days, keep the rest
+    localStorage.clear()
+    rt = makeRuntime({ oldSessions: 5 })
+    await tick(5)
+    check('页头有「只留 7 天」按钮', rt.sweepButton() !== null && rt.sweepText() === '只留 7 天', rt.sweepText())
+    const sweepAt = Array.from(rt.container.querySelectorAll('.drt-actions > button')).map(el => el.className)
+    check('按钮排在返回对话和加号之前',
+      sweepAt.length === 3 && sweepAt[0].indexOf('drt-sweep') >= 0 && sweepAt[1].indexOf('drt-ghost') >= 0 && sweepAt[2].indexOf('drt-add') >= 0,
+      sweepAt.join('|'))
+    check('按钮带说明', (rt.sweepButton() || {}).title !== undefined && rt.sweepButton().title.indexOf('7 天') >= 0,
+      rt.sweepButton() ? rt.sweepButton().title : '')
+    click(rt.sweepButton())
+    await tick(5)
+    check('点按钮先弹确认框', rt.dialogText().indexOf('归档更早的会话') >= 0, rt.dialogText())
+    check('确认框写清要归档几条', rt.dialogText().indexOf('5 个会话') >= 0, rt.dialogText())
+    check('确认框说可以恢复', rt.dialogText().indexOf('恢复') >= 0, rt.dialogText())
+    check('还没确认就一个字都没归档', rt.archivedIds().length === 0, rt.archivedIds().join('|'))
+    click(rt.dialogCancel())
+    await tick(5)
+    check('取消后什么都不做', rt.archivedIds().length === 0 && rt.dialogText() === '', rt.archivedIds().join('|'))
+
+    click(rt.sweepButton())
+    await tick(5)
+    click(rt.dialogConfirm())
+    await tick(60)
+    check('确认后 7 天以前的全归档了', rt.archivedIds().sort().join('|') === 'o01|o02|o03|o04|o05', rt.archivedIds().join('|'))
+    check('归档后给出结果提示', rt.noticeText() === '已归档 5 个会话。', rt.noticeText())
+    check('归档调用走的是界面归档接口',
+      rt.calls.filter(call => call[0] === 'uiWorkspace.archiveSession').length === 5,
+      String(rt.calls.filter(call => call[0] === 'uiWorkspace.archiveSession').length))
+    check('归档后确认框已关掉', rt.dialogText() === '', rt.dialogText())
+    click(rt.sweepButton())
+    await tick(5)
+    check('再点一次说已经没有更早的了', rt.noticeText() === '7 天以前的会话已经没有了。', rt.noticeText())
+    check('没有可归档时不再弹确认框', rt.dialogText() === '', rt.dialogText())
+    rt.unmount()
+
+    // 21a. the row that is on the page right now and just past the cutoff
+    localStorage.clear()
+    rt = makeRuntime({ pageOld: 2 })
+    await tick(5)
+    // These two sit past the cutoff but inside the ten-day window, so the page
+    // counts them today and must stop counting them once they are archived.
+    const doneBefore = Number(rt.zoneCount('Done'))
+    check('过期边缘的对话算在已完成里', doneBefore === 40, String(doneBefore))
+    click(rt.sweepButton())
+    await tick(5)
+    check('确认框只点名这两条', rt.dialogText().indexOf('2 个会话') >= 0, rt.dialogText())
+    click(rt.dialogConfirm())
+    await tick(60)
+    check('归档后已完成计数少了两条', Number(rt.zoneCount('Done')) === doneBefore - 2,
+      doneBefore + ' → ' + rt.zoneCount('Done'))
+    check('归档的正是这两条', rt.archivedIds().sort().join('|') === 'm01|m02', rt.archivedIds().join('|'))
+    rt.unmount()
+
+    // 21b. what the sweep leaves alone: starred rows and rows still running
+    localStorage.clear()
+    localStorage.setItem('dsh.recent-tasks.favorites.v1', JSON.stringify(['o01']))
+    rt = makeRuntime({ oldSessions: 5, running: ['o02'] })
+    await tick(5)
+    click(rt.sweepButton())
+    await tick(5)
+    check('确认框说明收藏的不会被归档', rt.dialogText().indexOf('收藏') >= 0, rt.dialogText())
+    check('确认框说明还在运行的不动', rt.dialogText().indexOf('运行') >= 0, rt.dialogText())
+    click(rt.dialogConfirm())
+    await tick(60)
+    check('收藏的和在运行的都没被归档',
+      rt.archivedIds().sort().join('|') === 'o03|o04|o05', rt.archivedIds().join('|'))
+    check('只归档剩下的三条', rt.noticeText() === '已归档 3 个会话。', rt.noticeText())
+    rt.unmount()
+
+    // 21c. failures are reported, not swallowed
+    localStorage.clear()
+    rt = makeRuntime({ oldSessions: 3, archiveFails: ['o02'] })
+    await tick(5)
+    click(rt.sweepButton())
+    await tick(5)
+    click(rt.dialogConfirm())
+    await tick(60)
+    check('部分没归档时说清几条', rt.noticeText() === '1 个没能归档：这个会话还在运行', rt.noticeText())
+    check('能归档的照旧归档', rt.archivedIds().sort().join('|') === 'o01|o03', rt.archivedIds().join('|'))
+    rt.unmount()
+
+    // 21d. a build without an archive API says so instead of breaking
+    localStorage.clear()
+    rt = makeRuntime({ oldSessions: 2, noArchive: true })
+    await tick(5)
+    click(rt.sweepButton())
+    await tick(5)
+    check('归档接口缺失时直接说明', rt.noticeText() === '当前界面不支持归档会话。', rt.noticeText())
+    check('归档接口缺失时不弹确认框', rt.dialogText() === '', rt.dialogText())
     rt.unmount()
 
     const failed = results.filter(line => line.indexOf('FAIL') === 0).length
