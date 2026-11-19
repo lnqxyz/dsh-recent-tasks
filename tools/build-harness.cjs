@@ -628,6 +628,18 @@ const harness = String.raw`
         rt0.finishRun('s09')
       }
       document.title = 'preview'
+      // ?freeze=1.2 pauses every animation 1.2s in, so screenshots can capture
+      // a moving effect at a chosen point instead of whenever Chrome got there.
+      const freeze = /[?&]freeze=([0-9.]+)/.exec(location.search)
+      if (freeze) {
+        const at = Number(freeze[1]) * 1000
+        requestAnimationFrame(() => {
+          for (const animation of document.getAnimations()) {
+            animation.currentTime = at
+            animation.pause()
+          }
+        })
+      }
       return
     }
     // 1. two zones: 2 running cards + 15 completed rows
@@ -684,6 +696,26 @@ const harness = String.raw`
         const el = rt.container.querySelector('.drt-card.is-' + tone)
         return el ? getComputedStyle(el).backgroundColor : 'missing'
       }).join(' / '))
+
+    // 3a2b. the tone swap: 正在运行 is the light blue that moves, 未读 the green
+    const rgbOf = css => {
+      const match = /rgba?\(([^)]+)\)/.exec(css)
+      if (!match) return null
+      const parts = match[1].split(',').map(value => Number(value.trim()))
+      return { r: parts[0], g: parts[1], b: parts[2] }
+    }
+    const runDot = rt.container.querySelector('.drt-card.is-running .drt-cardDot')
+    const unreadDot = rt.container.querySelector('.drt-card.is-unread .drt-cardDot')
+    const runRgb = runDot ? rgbOf(getComputedStyle(runDot).backgroundColor) : null
+    const unreadRgb = unreadDot ? rgbOf(getComputedStyle(unreadDot).backgroundColor) : null
+    check('正在运行的点偏蓝', runRgb !== null && runRgb.b > runRgb.r + 60 && runRgb.b > runRgb.g + 40, JSON.stringify(runRgb))
+    check('未读的点偏绿', unreadRgb !== null && unreadRgb.g > unreadRgb.r + 60 && unreadRgb.g > unreadRgb.b + 40, JSON.stringify(unreadRgb))
+    const runCard = rt.container.querySelector('.drt-card.is-running')
+    const unreadCard = rt.container.querySelector('.drt-card.is-unread')
+    check('运行卡带浅蓝渐变底', /linear-gradient/.test(getComputedStyle(runCard).backgroundImage),
+      getComputedStyle(runCard).backgroundImage.slice(0, 48))
+    check('运行卡在流动', getComputedStyle(runCard).animationName.indexOf('drt-flow') >= 0, getComputedStyle(runCard).animationName)
+    check('未读卡不流动', getComputedStyle(unreadCard).animationName === 'none', getComputedStyle(unreadCard).animationName)
 
     // 3a3. 收藏：a star adds the session to its band, a second click removes it
     check('收藏区一开始整块不占位', rt.favorites() === 0 && !rt.container.querySelector('.drt-sectionFav') && rt.zoneCount('Fav') === '',
@@ -780,7 +812,7 @@ const harness = String.raw`
     click(rt.container.querySelector('.drt-card.is-running .drt-star'))
     await tick()
     const favDot = rt.container.querySelector('.drt-card.is-fav .drt-cardDot')
-    check('收藏里运行中的卡片点仍为绿', !!favDot && favDot.className.indexOf('is-running') >= 0, favDot ? favDot.className : 'missing')
+    check('收藏里运行中的卡片点仍是蓝的', !!favDot && favDot.className.indexOf('is-running') >= 0, favDot ? favDot.className : 'missing')
     check('收藏里运行中的卡片点不是待确认态', !!favDot && favDot.className.indexOf('is-pending') < 0, favDot ? favDot.className : 'missing')
     rt.unmount()
 
@@ -795,7 +827,8 @@ const harness = String.raw`
     const favWaitPill = rt.container.querySelector('.drt-card.is-fav .drt-pill')
     check('收藏里待确认的卡片点保持琥珀', !!favWaitDot && favWaitDot.className.indexOf('is-fav') >= 0 && favWaitDot.className.indexOf('is-running') < 0,
       favWaitDot ? favWaitDot.className : 'missing')
-    check('收藏里待确认的卡片仍带红标', favWaitPill ? favWaitPill.textContent : 'missing', favWaitPill ? favWaitPill.textContent : 'missing')
+    check('收藏里待确认的卡片仍带红标', !!favWaitPill && favWaitPill.textContent === '等你确认',
+      favWaitPill ? favWaitPill.textContent : 'missing')
     rt.unmount()
 
     // 3c. the remembered unread set survives a reload while it stays unopened
@@ -1198,6 +1231,12 @@ const harness = String.raw`
     check('待确认的会话留在正在运行区', rt.lives() === 2 && rt.liveTitles().indexOf('对话 5') >= 0, rt.liveTitles().join('|'))
     check('待确认提示写明一个在等我', rt.chipText() === '待你处理 1', rt.chipText())
     check('待确认卡片带 is-pending 标记', rt.pendingCards() === 1, String(rt.pendingCards()))
+    const pendingCard = rt.container.querySelector('.drt-card.is-pending')
+    const pendingDot = rt.container.querySelector('.drt-card.is-pending .drt-cardDot')
+    const pendingRgb = pendingDot ? rgbOf(getComputedStyle(pendingDot).backgroundColor) : null
+    check('待确认的卡不跟着流动', getComputedStyle(pendingCard).animationName === 'none', getComputedStyle(pendingCard).animationName)
+    check('待确认的点仍是红色', pendingRgb !== null && pendingRgb.r > pendingRgb.g + 80 && pendingRgb.r > pendingRgb.b + 80,
+      JSON.stringify(pendingRgb))
     check('卡片标签说明要做什么', rt.pendingLabels().join('|') === '等你确认', rt.pendingLabels().join('|'))
     check('待确认会话排在正在跑的前面', rt.liveTitles()[0] === '对话 5', rt.liveTitles().join('|'))
     check('待确认不算未读', rt.unreads() === 0, String(rt.unreads()))
