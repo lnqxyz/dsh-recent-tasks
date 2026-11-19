@@ -724,13 +724,21 @@ const harness = String.raw`
     const bigStarSvg = bigStar.querySelector('svg')
     const bigStarBox = bigStar.getBoundingClientRect()
     const bigTitleBox = bigStar.closest('.drt-card').querySelector('.drt-cardTitle').getBoundingClientRect()
-    check('星星图标放大到 30px', Math.round(parseFloat(getComputedStyle(bigStarSvg).width)) === 30,
+    const starIconBox = bigStarSvg.getBoundingClientRect()
+    check('星星图标随竖栏放大到 44-64px', starIconBox.width >= 44 && starIconBox.width <= 64,
       getComputedStyle(bigStarSvg).width)
     const starRail = bigStar.closest('.drt-cardRail')
     const cardBox0 = bigStar.closest('.drt-card').getBoundingClientRect()
-    const railBox = starRail ? starRail.getBoundingClientRect() : { width: 0, right: 0 }
-    check('星星改成右侧竖条', starRail !== null && Math.round(railBox.width) === 48 && Math.abs(railBox.right - cardBox0.right) <= 2,
-      Math.round(railBox.width) + ' 宽 / 右差 ' + Math.round(Math.abs(railBox.right - cardBox0.right)))
+    const railBox = starRail ? starRail.getBoundingClientRect() : { width: 0, right: 0, left: 0 }
+    check('星星竖栏占卡片三分之一', starRail !== null && Math.abs(railBox.width / cardBox0.width - 0.34) <= 0.02 && Math.abs(railBox.right - cardBox0.right) <= 2,
+      Math.round(railBox.width) + ' 宽 / 卡宽 ' + Math.round(cardBox0.width) + ' / 右差 ' + Math.round(Math.abs(railBox.right - cardBox0.right)))
+    const bigStarCenter = (starIconBox.left + starIconBox.width / 2)
+    const railCenter = railBox.left + railBox.width / 2
+    check('星星在竖栏里左右居中', Math.abs(bigStarCenter - railCenter) <= 2,
+      Math.round(bigStarCenter) + ' / ' + Math.round(railCenter))
+    const bigMetaBox = bigStar.closest('.drt-card').querySelector('.drt-cardMeta').getBoundingClientRect()
+    check('说明文字不钻到竖栏底下', bigMetaBox.right <= railBox.left,
+      Math.round(bigMetaBox.right) + ' / ' + Math.round(railBox.left))
     check('竖条和内容之间有分隔线', starRail !== null && parseFloat(getComputedStyle(starRail).borderLeftWidth) === 1,
       starRail === null ? 'no rail' : getComputedStyle(starRail).borderLeftWidth)
     check('星星点击区撑满竖条', Math.abs(bigStarBox.width - railBox.width) <= 1 && bigStarBox.height >= cardBox0.height - 4,
