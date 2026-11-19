@@ -737,28 +737,24 @@ const harness = String.raw`
     const bigStar = rt.container.querySelector('.drt-card .drt-star')
     const bigStarSvg = bigStar.querySelector('svg')
     const bigStarBox = bigStar.getBoundingClientRect()
-    const bigTitleBox = bigStar.closest('.drt-card').querySelector('.drt-cardTitle').getBoundingClientRect()
+    const firstCard0 = bigStar.closest('.drt-card')
+    const cardBox0 = firstCard0.getBoundingClientRect()
     const starIconBox = bigStarSvg.getBoundingClientRect()
-    check('星星图标随竖栏放大到 44-64px', starIconBox.width >= 44 && starIconBox.width <= 64,
-      getComputedStyle(bigStarSvg).width)
-    const starRail = bigStar.closest('.drt-cardRail')
-    const cardBox0 = bigStar.closest('.drt-card').getBoundingClientRect()
-    const railBox = starRail ? starRail.getBoundingClientRect() : { width: 0, right: 0, left: 0 }
-    check('星星竖栏占卡片三分之一', starRail !== null && Math.abs(railBox.width / cardBox0.width - 0.34) <= 0.02 && Math.abs(railBox.right - cardBox0.right) <= 2,
-      Math.round(railBox.width) + ' 宽 / 卡宽 ' + Math.round(cardBox0.width) + ' / 右差 ' + Math.round(Math.abs(railBox.right - cardBox0.right)))
-    const bigStarCenter = (starIconBox.left + starIconBox.width / 2)
-    const railCenter = railBox.left + railBox.width / 2
-    check('星星在竖栏里左右居中', Math.abs(bigStarCenter - railCenter) <= 2,
-      Math.round(bigStarCenter) + ' / ' + Math.round(railCenter))
-    const bigMetaBox = bigStar.closest('.drt-card').querySelector('.drt-cardMeta').getBoundingClientRect()
-    check('说明文字不钻到竖栏底下', bigMetaBox.right <= railBox.left,
-      Math.round(bigMetaBox.right) + ' / ' + Math.round(railBox.left))
-    check('竖条和内容之间有分隔线', starRail !== null && parseFloat(getComputedStyle(starRail).borderLeftWidth) === 1,
-      starRail === null ? 'no rail' : getComputedStyle(starRail).borderLeftWidth)
-    check('星星点击区撑满竖条', Math.abs(bigStarBox.width - railBox.width) <= 1 && bigStarBox.height >= cardBox0.height - 4,
-      Math.round(bigStarBox.width) + 'x' + Math.round(bigStarBox.height) + ' / 卡高 ' + Math.round(cardBox0.height))
+    check('星星不再是一条竖栏', rt.container.querySelector('.drt-cardRail') === null)
+    check('星星图标 22px', Math.round(starIconBox.width) === 22, getComputedStyle(bigStarSvg).width)
+    check('星星按钮宽 44px', Math.round(bigStarBox.width) === 44, getComputedStyle(bigStar).width)
+    check('星星按钮高约卡片一半', Math.abs(bigStarBox.height / cardBox0.height - 0.5) <= 0.05,
+      Math.round(bigStarBox.height) + ' / 卡高 ' + Math.round(cardBox0.height))
     check('星星竖向居中', Math.abs((bigStarBox.top + bigStarBox.height / 2) - (cardBox0.top + cardBox0.height / 2)) <= 2,
       Math.round(bigStarBox.top + bigStarBox.height / 2) + ' / ' + Math.round(cardBox0.top + cardBox0.height / 2))
+    check('星星贴卡片右边 8px', Math.abs((cardBox0.right - bigStarBox.right) - 8) <= 1.5,
+      Math.round(cardBox0.right - bigStarBox.right) + 'px')
+    check('星星点击区至少 44x44', bigStarBox.width >= 44 && bigStarBox.height >= 44,
+      Math.round(bigStarBox.width) + 'x' + Math.round(bigStarBox.height))
+    const bigTitleBox = firstCard0.querySelector('.drt-cardTitle').getBoundingClientRect()
+    const bigMetaBox = firstCard0.querySelector('.drt-cardMeta').getBoundingClientRect()
+    check('说明文字不钻到星星底下', bigMetaBox.right <= bigStarBox.left,
+      Math.round(bigMetaBox.right) + ' / ' + Math.round(bigStarBox.left))
     check('标题让开星星，不压到图标', bigTitleBox.right <= bigStarBox.left,
       Math.round(bigTitleBox.right) + ' / ' + Math.round(bigStarBox.left))
     const firstCard = bigStar.closest('.drt-card')

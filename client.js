@@ -189,7 +189,7 @@ window.__ModuleLoader__.load({
       '.drt-cardGrid.is-unread{max-height:min(30vh,260px);overflow-y:auto;overscroll-behavior:contain}',
       '.drt-cardGrid.is-fav{max-height:min(28vh,240px);overflow-y:auto;overscroll-behavior:contain}',
       '.drt-cardGrid.is-done{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}',
-      '.drt-card{position:relative;display:flex;flex-direction:column;gap:6px;height:100%;min-height:100px;box-sizing:border-box;padding:14px calc(34% + 16px) 13px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-base);color:inherit;font-family:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease}',
+      '.drt-card{position:relative;display:flex;flex-direction:column;gap:6px;height:100%;min-height:100px;box-sizing:border-box;padding:14px 60px 13px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-base);color:inherit;font-family:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease}',
       '.drt-card:hover{transform:translateY(-1px)}',
       '.drt-card:active{transform:translateY(0)}',
       '.drt-card:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}',
@@ -210,22 +210,19 @@ window.__ModuleLoader__.load({
       '.drt-card.is-pending:hover{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, var(--dsw-alias-bg-base));box-shadow:inset 3px 0 0 color-mix(in srgb, var(--dsw-alias-state-error-primary) 88%, transparent),0 14px 26px -14px color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, transparent)}',
       // 收藏's dot now follows the session's state (blue/green/red/grey) instead
       // of staying amber: the amber card and the lit star already say "starred".
-      // The star sits in a full-height rail down the right edge. The rail takes
-      // a third of the card, so it is a real column rather than a sliver: the
-      // whole column is the click target and the star grows with it.
-      '.drt-cardRail{position:absolute;top:1px;right:1px;bottom:1px;z-index:2;box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:34%;border-left:1px solid color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent);border-radius:0 11px 11px 0;background:linear-gradient(90deg,color-mix(in srgb, var(--dsw-alias-label-primary) 2%, transparent),color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent))}',
-      '.drt-star{position:relative;display:inline-flex;align-items:center;justify-content:center;width:100%;height:100%;padding:0;border:none;border-radius:0 11px 11px 0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;opacity:.72;transition:opacity .16s ease,color .16s ease,background-color .16s ease}',
-      // A soft halo behind the star, sized off the rail. It stays invisible on
-      // an unsaved card and is the only thing that glows once it is saved.
-      '.drt-star::before{content:"";position:absolute;width:min(72%,84px);aspect-ratio:1;border-radius:50%;pointer-events:none;background:radial-gradient(circle,color-mix(in srgb,var(--dsw-alias-state-warn-primary) 14%,transparent) 0%,color-mix(in srgb,var(--dsw-alias-state-warn-primary) 5%,transparent) 58%,transparent 74%);opacity:0;transform:scale(.88);transition:opacity .18s ease,transform .18s ease}',
-      '.drt-star svg{position:relative;z-index:1;width:clamp(44px,35%,64px);height:auto;transition:transform .18s cubic-bezier(.34,1.56,.64,1)}',
-      '.drt-star:hover{opacity:1;background:var(--dsw-alias-interactive-bg-hover)}',
-      '.drt-star:hover::before{opacity:.8;transform:scale(1)}',
+      // The star is a small action pinned to the right edge — half the card tall
+      // and 44px wide, vertically centred, the way chat apps float a bookmark
+      // beside a row. It is deliberately not a column: the card keeps its width.
+      '.drt-star{position:absolute;top:25%;bottom:25%;right:8px;z-index:2;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:44px;padding:0;border:none;border-radius:10px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;opacity:.55;transition:opacity .15s ease,color .15s ease,background-color .15s ease}',
+      // A soft amber halo behind the star, shown only while the session is starred.
+      '.drt-star::before{content:"";position:absolute;width:38px;height:38px;border-radius:50%;pointer-events:none;background:radial-gradient(circle,color-mix(in srgb,var(--dsw-alias-state-warn-primary) 13%,transparent) 0%,color-mix(in srgb,var(--dsw-alias-state-warn-primary) 4%,transparent) 60%,transparent 78%);opacity:0;transform:scale(.86);transition:opacity .16s ease,transform .16s ease}',
+      '.drt-star svg{position:relative;z-index:1;width:22px;height:22px;transition:transform .16s cubic-bezier(.34,1.56,.64,1)}',
+      '.drt-star:hover{opacity:1;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover)}',
       '.drt-star:hover svg{transform:scale(1.08)}',
-      '.drt-star:focus-visible{opacity:1;outline:2px solid var(--dsw-alias-state-warn-primary);outline-offset:-3px}',
+      '.drt-star:focus-visible{opacity:1;outline:2px solid var(--dsw-alias-state-warn-primary);outline-offset:1px}',
       '.drt-star.is-on{color:var(--dsw-alias-state-warn-primary);opacity:1}',
       '.drt-star.is-on::before{opacity:1;transform:scale(1)}',
-      '.drt-card:hover .drt-star{opacity:.92}',
+      '.drt-card:hover .drt-star{opacity:.85}',
       '.drt-card:hover .drt-star.is-on{opacity:1}',
       '.drt-star.is-on svg{animation:drt-star-pop .3s cubic-bezier(.34,1.56,.64,1)}',
       '.drt-card.is-fav{animation:drt-fav-in .22s cubic-bezier(.22,1,.36,1)}',
@@ -1074,31 +1071,29 @@ window.__ModuleLoader__.load({
             h('span', { className: 'drt-cardTitle' }, row.title),
           ),
           cardMeta(row, tone),
-          h('span', { className: 'drt-cardRail' },
-            h('button', {
-              type: 'button',
-              className: 'drt-star' + (favorite ? ' is-on' : ''),
-              'aria-pressed': favorite ? 'true' : 'false',
-              'aria-label': starLabel,
-              title: starLabel,
-              onClick: event => {
-                event.stopPropagation()
-                toggleFavorite(row.id)
-              },
+          h('button', {
+            type: 'button',
+            className: 'drt-star' + (favorite ? ' is-on' : ''),
+            'aria-pressed': favorite ? 'true' : 'false',
+            'aria-label': starLabel,
+            title: starLabel,
+            onClick: event => {
+              event.stopPropagation()
+              toggleFavorite(row.id)
             },
-              h('svg', {
-                viewBox: '0 0 20 20',
-                'aria-hidden': 'true',
-                focusable: 'false',
-              },
-                h('path', {
-                  d: 'M10 2.7l2.25 4.56 5.03.73-3.64 3.55.86 5.01L10 14.17l-4.5 2.38.86-5.01L2.72 7.99l5.03-.73z',
-                  fill: favorite ? 'currentColor' : 'none',
-                  stroke: 'currentColor',
-                  strokeWidth: 1.4,
-                  strokeLinejoin: 'round',
-                }),
-              ),
+          },
+            h('svg', {
+              viewBox: '0 0 20 20',
+              'aria-hidden': 'true',
+              focusable: 'false',
+            },
+              h('path', {
+                d: 'M10 2.7l2.25 4.56 5.03.73-3.64 3.55.86 5.01L10 14.17l-4.5 2.38.86-5.01L2.72 7.99l5.03-.73z',
+                fill: favorite ? 'currentColor' : 'none',
+                stroke: 'currentColor',
+                strokeWidth: 1.4,
+                strokeLinejoin: 'round',
+              }),
             ),
           ),
         )
