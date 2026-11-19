@@ -1,5 +1,7 @@
 # dsh-recent-tasks · 最近任务
 
+仓库：<https://github.com/lnqxyz/dsh-recent-tasks> · 问题与建议：<https://github.com/lnqxyz/dsh-recent-tasks/issues>
+
 DSH 侧栏里一块常驻的「最近任务」面板：正在跑的、等你确认的、收藏的、还没看的、已完成的会话分区排开，点一下回对话；点【+】在记住的文件夹里直接开新会话，并归进那个工作区，而不是「未分组」。
 
 宿主自带侧栏只列标题，看不出「在跑」「跑完我还没看」「我看过了」。这个插件补的就是这层状态。
