@@ -605,7 +605,10 @@ const harness = String.raw`
   async function run() {
     if (location.search.indexOf('preview') >= 0) {
       localStorage.clear()
-      if (location.search.indexOf('favrun') >= 0) {
+      if (location.search.indexOf('favstatus') >= 0) {
+        // One favourite in each state, so the status chip can be eyeballed.
+        localStorage.setItem('dsh.recent-tasks.favorites.v1', JSON.stringify(['s01', 's02', 's03', 's05']))
+      } else if (location.search.indexOf('favrun') >= 0) {
         localStorage.setItem('dsh.recent-tasks.favorites.v1', JSON.stringify(['s01', 's07', 's02']))
       } else if (location.search.indexOf('fav') >= 0) {
         localStorage.setItem('dsh.recent-tasks.favorites.v1', JSON.stringify(['s02', 's05', 's09']))
@@ -622,6 +625,12 @@ const harness = String.raw`
         rt0.finishRun('s02')
         rt0.finishRun('s04')
         rt0.finishRun('s09')
+      }
+      if (location.search.indexOf('favstatus') >= 0) {
+        // s01 stays running, s02 just finished (unread), s03 waits on the
+        // person, s05 is the plain completed one.
+        rt0.finishRun('s02')
+        rt0.setPending('s03', 'approval')
       }
       document.title = 'preview'
       // ?freeze=1.2 pauses every animation 1.2s in, so screenshots can capture
@@ -696,11 +705,16 @@ const harness = String.raw`
       }).join(' / '))
 
     // 3a2b. the tone swap: 正在运行 is the light blue that moves, 未读 the green
+    // color-mix() serialises as color(srgb r g b) with 0–1 channels, so both
+    // that and the plain rgb() form have to be readable here.
     const rgbOf = css => {
-      const match = /rgba?\(([^)]+)\)/.exec(css)
-      if (!match) return null
-      const parts = match[1].split(',').map(value => Number(value.trim()))
-      return { r: parts[0], g: parts[1], b: parts[2] }
+      const srgb = /color\(srgb ([^)]+)\)/.exec(css)
+      const plain = srgb ? null : /rgba?\(([^)]+)\)/.exec(css)
+      const raw = srgb ? srgb[1] : plain ? plain[1] : ''
+      const parts = raw.split(/[\s,/]+/).filter(Boolean).map(Number).filter(value => !Number.isNaN(value))
+      if (parts.length < 3) return null
+      const scale = srgb ? 255 : 1
+      return { r: parts[0] * scale, g: parts[1] * scale, b: parts[2] * scale }
     }
     const runDot = rt.container.querySelector('.drt-card.is-running .drt-cardDot')
     const unreadDot = rt.container.querySelector('.drt-card.is-unread .drt-cardDot')
@@ -772,6 +786,15 @@ const harness = String.raw`
     await tick()
     check('点星星不打开会话', rt.calls.filter(call => call[0] === 'uiWorkspace.openSession').length === beforeStars, JSON.stringify(rt.calls))
     check('收藏区出现该会话', rt.favorites() === 1 && rt.favoriteTitles()[0] === '对话 1', rt.favoriteTitles().join('|'))
+    const favUnreadChip = rt.container.querySelector('.drt-card.is-fav .drt-status')
+    check('收藏里未读的卡片写明未读', !!favUnreadChip && favUnreadChip.textContent === '未读',
+      favUnreadChip ? favUnreadChip.textContent : 'missing')
+    const favUnreadChipRgb = favUnreadChip ? rgbOf(getComputedStyle(favUnreadChip).color) : null
+    check('未读状态标的字偏绿', favUnreadChipRgb !== null && favUnreadChipRgb.g > favUnreadChipRgb.r + 40 && favUnreadChipRgb.g > favUnreadChipRgb.b + 15,
+      JSON.stringify(favUnreadChipRgb))
+    const favUnreadDot = rt.container.querySelector('.drt-card.is-fav .drt-cardDot')
+    check('收藏里未读的卡片点变绿', !!favUnreadDot && favUnreadDot.className.indexOf('is-unread') >= 0,
+      favUnreadDot ? favUnreadDot.className : 'missing')
     check('收藏区计数为 1', rt.zoneCount('Fav') === '1', rt.counts().join('|'))
     check('原区域不再保留该会话', rt.unreads() === 0 && rt.zoneCount('Unread') === '', '未读 ' + rt.unreads())
     check('同一会话四区只出现一次', rt.titleCount('对话 1') === 1, String(rt.titleCount('对话 1')))
@@ -847,6 +870,12 @@ const harness = String.raw`
     await tick()
     check('收藏已完成的会话：已完成少一条', rt.zoneCount('Done') === '37' && rt.favorites() === 1 && rt.favoriteTitles()[0] === '对话 2',
       rt.counts().join('|') + ' / ' + rt.favoriteTitles().join('|'))
+    const favDoneChip = rt.container.querySelector('.drt-card.is-fav .drt-status')
+    check('收藏里已完成的卡片写明已完成', !!favDoneChip && favDoneChip.textContent === '已完成',
+      favDoneChip ? favDoneChip.textContent : 'missing')
+    const favDoneDot = rt.container.querySelector('.drt-card.is-fav .drt-cardDot')
+    check('已完成状态的点不冒充运行中', !!favDoneDot && favDoneDot.className === 'drt-cardDot',
+      favDoneDot ? favDoneDot.className : 'missing')
     check('已完成的会话四区只出现一次', rt.titleCount('对话 2') === 1, String(rt.titleCount('对话 2')))
     click(rt.container.querySelector('.drt-card.is-fav .drt-star'))
     await tick()
@@ -862,6 +891,14 @@ const harness = String.raw`
     const favDot = rt.container.querySelector('.drt-card.is-fav .drt-cardDot')
     check('收藏里运行中的卡片点仍是蓝的', !!favDot && favDot.className.indexOf('is-running') >= 0, favDot ? favDot.className : 'missing')
     check('收藏里运行中的卡片点不是待确认态', !!favDot && favDot.className.indexOf('is-pending') < 0, favDot ? favDot.className : 'missing')
+    const favChip = rt.container.querySelector('.drt-card.is-fav .drt-status')
+    check('收藏里运行中的卡片写明运行中', !!favChip && favChip.textContent === '运行中',
+      favChip ? favChip.textContent : 'missing')
+    const favChipRgb = favChip ? rgbOf(getComputedStyle(favChip).color) : null
+    check('运行中状态标的字偏蓝', favChipRgb !== null && favChipRgb.b > favChipRgb.r + 60 && favChipRgb.b > favChipRgb.g + 30,
+      JSON.stringify(favChipRgb))
+    check('其它区卡片不带状态标', rt.container.querySelectorAll('.drt-card:not(.is-fav) .drt-status').length === 0,
+      String(rt.container.querySelectorAll('.drt-card:not(.is-fav) .drt-status').length))
     rt.unmount()
 
     // 3b5. a starred Session waiting on the person keeps its amber dot and red pill
@@ -873,10 +910,11 @@ const harness = String.raw`
     await tick()
     const favWaitDot = rt.container.querySelector('.drt-card.is-fav .drt-cardDot')
     const favWaitPill = rt.container.querySelector('.drt-card.is-fav .drt-pill')
-    check('收藏里待确认的卡片点保持琥珀', !!favWaitDot && favWaitDot.className.indexOf('is-fav') >= 0 && favWaitDot.className.indexOf('is-running') < 0,
+    check('收藏里待确认的卡片点变红', !!favWaitDot && favWaitDot.className.indexOf('is-pending') >= 0 && favWaitDot.className.indexOf('is-fav') < 0,
       favWaitDot ? favWaitDot.className : 'missing')
     check('收藏里待确认的卡片仍带红标', !!favWaitPill && favWaitPill.textContent === '等你确认',
       favWaitPill ? favWaitPill.textContent : 'missing')
+    check('待确认的收藏卡不重复加状态标', !rt.container.querySelector('.drt-card.is-fav .drt-status'), 'unexpected chip')
     rt.unmount()
 
     // 3c. the remembered unread set survives a reload while it stays unopened

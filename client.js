@@ -69,6 +69,9 @@ window.__ModuleLoader__.load({
       'section.fav': '收藏',
       'section.unread': '未读',
       'section.done': '已完成',
+      'status.running': '运行中',
+      'status.unread': '未读',
+      'status.done': '已完成',
       'section.pendingChip': '待你处理 {n}',
       'pending.approval': '等你确认',
       'pending.planReview': '等你定方案',
@@ -109,6 +112,9 @@ window.__ModuleLoader__.load({
       'section.fav': 'Favorites',
       'section.unread': 'Unread',
       'section.done': 'Completed',
+      'status.running': 'Running',
+      'status.unread': 'Unread',
+      'status.done': 'Completed',
       'section.pendingChip': '{n} waiting on you',
       'pending.approval': 'Needs approval',
       'pending.planReview': 'Review the plan',
@@ -202,7 +208,8 @@ window.__ModuleLoader__.load({
       '.drt-card.is-pending::after{content:none}',
       '.drt-card.is-pending::before{content:none}',
       '.drt-card.is-pending:hover{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, var(--dsw-alias-bg-base));box-shadow:inset 3px 0 0 color-mix(in srgb, var(--dsw-alias-state-error-primary) 88%, transparent),0 14px 26px -14px color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, transparent)}',
-      '.drt-cardDot.is-fav{background:var(--dsw-alias-state-warn-primary);opacity:1}',
+      // 收藏's dot now follows the session's state (blue/green/red/grey) instead
+      // of staying amber: the amber card and the lit star already say "starred".
       // The star sits in a full-height rail down the right edge. The rail takes
       // a third of the card, so it is a real column rather than a sliver: the
       // whole column is the click target and the star grows with it.
@@ -230,6 +237,12 @@ window.__ModuleLoader__.load({
       '.drt-cardDot.is-unread{background:var(--drt-unread-dot);opacity:1;animation:none}',
       '.drt-cardDot.is-pending{background:var(--dsw-alias-state-error-primary);opacity:1;animation:drt-pause 2.6s ease-in-out infinite}',
       '.drt-pill{flex:none;display:inline-flex;align-items:center;padding:2px 7px;border-radius:6px;background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 15%, transparent);color:var(--dsw-alias-state-error-primary);font-size:11px;font-weight:600;line-height:1.5;white-space:nowrap}',
+      // 收藏 mixes four states in one band, so each card spells its state out.
+      // The text colour is mixed toward label-primary, which is light on the
+      // dark theme and dark on the light one, so a single rule serves both.
+      '.drt-status{flex:none;display:inline-flex;align-items:center;height:19px;padding:0 8px;border-radius:999px;font-size:11px;font-weight:600;line-height:1;letter-spacing:.01em;white-space:nowrap;background:color-mix(in srgb, var(--dsw-alias-label-primary) 6%, transparent);color:var(--dsw-alias-label-secondary)}',
+      '.drt-status.is-running{background:color-mix(in srgb, var(--drt-run) 14%, transparent);color:color-mix(in srgb, var(--drt-run) 68%, var(--dsw-alias-label-primary))}',
+      '.drt-status.is-unread{background:color-mix(in srgb, var(--drt-unread) 14%, transparent);color:color-mix(in srgb, var(--drt-unread) 68%, var(--dsw-alias-label-primary))}',
       '.drt-cardTitle{flex:1;min-width:0;font-size:16px;font-weight:600;line-height:1.35;color:var(--dsw-alias-label-primary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}',
       '.drt-cardMeta{position:relative;z-index:1;display:flex;align-items:center;gap:7px;min-width:0;margin-top:auto;font-size:12.5px;line-height:1.4;color:var(--dsw-alias-label-tertiary)}',
       '.drt-cardWorkspace{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
@@ -1011,7 +1024,15 @@ window.__ModuleLoader__.load({
         )
         : null
 
-      const cardMeta = row => h('span', { className: 'drt-cardMeta' },
+      const cardMeta = (row, tone) => h('span', { className: 'drt-cardMeta' },
+        // 收藏 is the only band holding several states at once; elsewhere the
+        // band header already names the state. A waiting session keeps its red
+        // pill instead, so it is not labelled twice.
+        tone === 'fav' && row.pending === undefined
+          ? h('span', {
+            className: 'drt-status is-' + (row.running === true ? 'running' : row.unread === true ? 'unread' : 'done'),
+          }, t(row.running === true ? 'status.running' : row.unread === true ? 'status.unread' : 'status.done'))
+          : null,
         row.pending === undefined ? null : h('span', { className: 'drt-pill' }, pendingLabel(row.pending, t)),
         h('span', { className: 'drt-cardWorkspace' }, row.workspace),
         h('span', { className: 'drt-cardSep', 'aria-hidden': 'true' }, '\u00b7'),
@@ -1039,16 +1060,20 @@ window.__ModuleLoader__.load({
         },
           h('span', { className: 'drt-cardHead' },
             h('span', {
+              // The dot speaks status in every band, 收藏 included: on an amber
+              // card an amber dot only repeated "favorite" and said nothing
+              // about running or unread.
               className: 'drt-cardDot'
-                + (tone === 'done' ? '' : ' is-' + tone)
-                // A starred Session can still be running; the dot keeps saying so.
-                + (tone === 'fav' && row.running === true && row.pending === undefined ? ' is-running' : '')
-                + (blocked ? ' is-pending' : ''),
+                + (row.pending !== undefined
+                  ? ' is-pending'
+                  : row.running === true
+                    ? ' is-running'
+                    : row.unread === true ? ' is-unread' : ''),
               'aria-hidden': 'true',
             }),
             h('span', { className: 'drt-cardTitle' }, row.title),
           ),
-          cardMeta(row),
+          cardMeta(row, tone),
           h('span', { className: 'drt-cardRail' },
             h('button', {
               type: 'button',
