@@ -741,13 +741,14 @@ const harness = String.raw`
     const cardBox0 = firstCard0.getBoundingClientRect()
     const starIconBox = bigStarSvg.getBoundingClientRect()
     check('星星不再是一条竖栏', rt.container.querySelector('.drt-cardRail') === null)
-    check('星星图标 22px', Math.round(starIconBox.width) === 22, getComputedStyle(bigStarSvg).width)
-    check('星星按钮宽 44px', Math.round(bigStarBox.width) === 44, getComputedStyle(bigStar).width)
-    check('星星按钮高约卡片一半', Math.abs(bigStarBox.height / cardBox0.height - 0.5) <= 0.05,
-      Math.round(bigStarBox.height) + ' / 卡高 ' + Math.round(cardBox0.height))
+    check('星星图标 30px', Math.round(starIconBox.width) === 30, getComputedStyle(bigStarSvg).width)
+    check('星星点击区 56px 宽', Math.round(bigStarBox.width) === 56, getComputedStyle(bigStar).width)
+    const starRestBg = getComputedStyle(bigStar).backgroundColor
+    check('未收藏的星星没有常驻底色', starRestBg === 'rgba(0, 0, 0, 0)' || starRestBg === 'transparent', starRestBg)
+    check('星星按钮高 56px', Math.round(bigStarBox.height) === 56, getComputedStyle(bigStar).height)
     check('星星竖向居中', Math.abs((bigStarBox.top + bigStarBox.height / 2) - (cardBox0.top + cardBox0.height / 2)) <= 2,
       Math.round(bigStarBox.top + bigStarBox.height / 2) + ' / ' + Math.round(cardBox0.top + cardBox0.height / 2))
-    check('星星贴卡片右边 8px', Math.abs((cardBox0.right - bigStarBox.right) - 8) <= 1.5,
+    check('星星贴卡片右边 4px', Math.abs((cardBox0.right - bigStarBox.right) - 4) <= 1.5,
       Math.round(cardBox0.right - bigStarBox.right) + 'px')
     check('星星点击区至少 44x44', bigStarBox.width >= 44 && bigStarBox.height >= 44,
       Math.round(bigStarBox.width) + 'x' + Math.round(bigStarBox.height))

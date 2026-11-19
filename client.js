@@ -189,7 +189,7 @@ window.__ModuleLoader__.load({
       '.drt-cardGrid.is-unread{max-height:min(30vh,260px);overflow-y:auto;overscroll-behavior:contain}',
       '.drt-cardGrid.is-fav{max-height:min(28vh,240px);overflow-y:auto;overscroll-behavior:contain}',
       '.drt-cardGrid.is-done{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}',
-      '.drt-card{position:relative;display:flex;flex-direction:column;gap:6px;height:100%;min-height:100px;box-sizing:border-box;padding:14px 60px 13px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-base);color:inherit;font-family:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease}',
+      '.drt-card{position:relative;display:flex;flex-direction:column;gap:6px;height:100%;min-height:100px;box-sizing:border-box;padding:14px 64px 13px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-base);color:inherit;font-family:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,transform .16s ease}',
       '.drt-card:hover{transform:translateY(-1px)}',
       '.drt-card:active{transform:translateY(0)}',
       '.drt-card:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}',
@@ -210,19 +210,22 @@ window.__ModuleLoader__.load({
       '.drt-card.is-pending:hover{background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, var(--dsw-alias-bg-base));box-shadow:inset 3px 0 0 color-mix(in srgb, var(--dsw-alias-state-error-primary) 88%, transparent),0 14px 26px -14px color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, transparent)}',
       // 收藏's dot now follows the session's state (blue/green/red/grey) instead
       // of staying amber: the amber card and the lit star already say "starred".
-      // The star is a small action pinned to the right edge — half the card tall
-      // and 44px wide, vertically centred, the way chat apps float a bookmark
-      // beside a row. It is deliberately not a column: the card keeps its width.
-      '.drt-star{position:absolute;top:25%;bottom:25%;right:8px;z-index:2;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:44px;padding:0;border:none;border-radius:10px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;opacity:.55;transition:opacity .15s ease,color .15s ease,background-color .15s ease}',
-      // A soft amber halo behind the star, shown only while the session is starred.
-      '.drt-star::before{content:"";position:absolute;width:38px;height:38px;border-radius:50%;pointer-events:none;background:radial-gradient(circle,color-mix(in srgb,var(--dsw-alias-state-warn-primary) 13%,transparent) 0%,color-mix(in srgb,var(--dsw-alias-state-warn-primary) 4%,transparent) 60%,transparent 78%);opacity:0;transform:scale(.86);transition:opacity .16s ease,transform .16s ease}',
-      '.drt-star svg{position:relative;z-index:1;width:22px;height:22px;transition:transform .16s cubic-bezier(.34,1.56,.64,1)}',
-      '.drt-star:hover{opacity:1;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover)}',
-      '.drt-star:hover svg{transform:scale(1.08)}',
-      '.drt-star:focus-visible{opacity:1;outline:2px solid var(--dsw-alias-state-warn-primary);outline-offset:1px}',
-      '.drt-star.is-on{color:var(--dsw-alias-state-warn-primary);opacity:1}',
+      // The star is a bare 30px mark on the right edge, vertically centred, with
+      // a 56px invisible hit area around it. No plate while it rests: a plate on
+      // every row turned the list into a column of buttons. The mark itself
+      // carries the state — faint outline when not starred, solid amber with a
+      // soft bloom when it is.
+      '.drt-star{position:absolute;top:50%;right:4px;transform:translateY(-50%);z-index:2;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;padding:0;border:none;border-radius:50%;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;opacity:.34;transition:opacity .16s ease,color .16s ease,background-color .16s ease}',
+      // A soft amber bloom behind a starred mark, so it reads solid, not stuck on.
+      '.drt-star::before{content:"";position:absolute;width:56px;height:56px;border-radius:50%;pointer-events:none;background:radial-gradient(circle,color-mix(in srgb,var(--dsw-alias-state-warn-primary) 16%,transparent) 0%,color-mix(in srgb,var(--dsw-alias-state-warn-primary) 6%,transparent) 52%,transparent 74%);opacity:0;transform:scale(.8);transition:opacity .2s ease,transform .2s ease}',
+      '.drt-star svg{position:relative;z-index:1;width:30px;height:30px;transition:transform .18s cubic-bezier(.34,1.56,.64,1),filter .18s ease}',
+      '.drt-star:hover{opacity:1;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}',
+      '.drt-star:hover svg{transform:scale(1.06)}',
+      '.drt-star:focus-visible{opacity:1;outline:2px solid var(--dsw-alias-state-warn-primary);outline-offset:-4px}',
+      '.drt-star.is-on,.drt-star.is-on:hover{color:var(--dsw-alias-state-warn-primary);opacity:1;background:transparent}',
       '.drt-star.is-on::before{opacity:1;transform:scale(1)}',
-      '.drt-card:hover .drt-star{opacity:.85}',
+      '.drt-star.is-on svg{filter:drop-shadow(0 2px 5px color-mix(in srgb, var(--dsw-alias-state-warn-primary) 46%, transparent))}',
+      '.drt-card:hover .drt-star{opacity:.6}',
       '.drt-card:hover .drt-star.is-on{opacity:1}',
       '.drt-star.is-on svg{animation:drt-star-pop .3s cubic-bezier(.34,1.56,.64,1)}',
       '.drt-card.is-fav{animation:drt-fav-in .22s cubic-bezier(.22,1,.36,1)}',
