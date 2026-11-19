@@ -76,7 +76,6 @@ window.__ModuleLoader__.load({
       'pending.planReview': '等你定方案',
       'pending.question': '等你回答',
       'pending.other': '等你处理',
-      'section.emptyFav': '点亮星星，会话会收进这里',
       'section.emptyUnread': '没有未读的对话',
       'section.emptyDone': '还没有已完成的对话',
       'star.add': '收藏这个对话',
@@ -121,7 +120,6 @@ window.__ModuleLoader__.load({
       'pending.planReview': 'Review the plan',
       'pending.question': 'Answer needed',
       'pending.other': 'Needs you',
-      'section.emptyFav': 'Star a session to keep it here',
       'section.emptyUnread': 'Nothing unread',
       'section.emptyDone': 'Nothing completed yet',
       'star.add': 'Star this session',
@@ -1082,16 +1080,18 @@ window.__ModuleLoader__.load({
       )
 
       // 收藏 sits directly under the running band: a star lands there first.
-      const favoriteSection = h('section', { className: 'drt-section drt-sectionFav' },
-        h('div', { className: 'drt-sectionHead' },
-          h('span', { className: 'drt-headDot is-fav', 'aria-hidden': 'true' }),
-          h('span', { className: 'drt-zoneLabel' }, t('section.fav')),
-          h('span', { className: 'drt-count' }, favoriteRows.length),
-        ),
-        favoriteRows.length === 0
-          ? h('p', { className: 'drt-empty' }, t('section.emptyFav'))
-          : h('div', { className: 'drt-cardGrid is-fav' }, favoriteRows.map(row => card(row, 'fav'))),
-      )
+      // It only takes room while it holds something — an empty band wedged
+      // between two live bands reads as if a session went missing.
+      const favoriteSection = favoriteRows.length === 0
+        ? null
+        : h('section', { className: 'drt-section drt-sectionFav' },
+          h('div', { className: 'drt-sectionHead' },
+            h('span', { className: 'drt-headDot is-fav', 'aria-hidden': 'true' }),
+            h('span', { className: 'drt-zoneLabel' }, t('section.fav')),
+            h('span', { className: 'drt-count' }, favoriteRows.length),
+          ),
+          h('div', { className: 'drt-cardGrid is-fav' }, favoriteRows.map(row => card(row, 'fav'))),
+        )
 
       const unreadSection = unreadRows.length === 0
         ? null

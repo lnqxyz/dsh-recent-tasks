@@ -659,7 +659,7 @@ const harness = String.raw`
     check('跑完的对话进入未读区', rt.unreads() === 1 && rt.unreadTitles()[0] === '对话 1', rt.unreadTitles().join('|'))
     check('未读区计数 1', rt.zoneCount('Unread') === '1', rt.counts().join('|'))
     check('已完成区不再包含它', rt.rowTitles().indexOf('对话 1') < 0 && rt.zoneCount('Done') === '38', rt.counts().join('|'))
-    check('四区顺序为 正在运行|收藏|未读|已完成', rt.zoneLabels().join('|') === '正在运行|收藏|未读|已完成', rt.zoneLabels().join('|'))
+    check('没有收藏时三区顺序为 正在运行|未读|已完成', rt.zoneLabels().join('|') === '正在运行|未读|已完成', rt.zoneLabels().join('|'))
     check('未读已写入本地存储', (localStorage.getItem('dsh.recent-tasks.unread.v1') || '').indexOf('s01') >= 0,
       localStorage.getItem('dsh.recent-tasks.unread.v1'))
 
@@ -686,9 +686,8 @@ const harness = String.raw`
       }).join(' / '))
 
     // 3a3. 收藏：a star adds the session to its band, a second click removes it
-    check('收藏区一开始为空并给出提示', rt.favorites() === 0 && rt.zoneCount('Fav') === '0' &&
-      (rt.container.querySelector('.drt-sectionFav .drt-empty') || {}).textContent === '点亮星星，会话会收进这里',
-      rt.container.querySelector('.drt-sectionFav') ? rt.container.querySelector('.drt-sectionFav').textContent : 'missing')
+    check('收藏区一开始整块不占位', rt.favorites() === 0 && !rt.container.querySelector('.drt-sectionFav') && rt.zoneCount('Fav') === '',
+      rt.zoneLabels().join('|'))
     check('每张卡都有星星', rt.container.querySelectorAll('.drt-card .drt-star').length === rt.container.querySelectorAll('.drt-card').length,
       String(rt.container.querySelectorAll('.drt-card .drt-star').length) + ' / ' + String(rt.container.querySelectorAll('.drt-card').length))
     const beforeStars = rt.calls.filter(call => call[0] === 'uiWorkspace.openSession').length
@@ -708,7 +707,7 @@ const harness = String.raw`
     check('重挂载后原区域仍不重复', rt.unreads() === 0 && rt.titleCount('对话 1') === 1, rt.titleCount('对话 1') + ' / 未读 ' + rt.unreads())
     click(rt.container.querySelector('.drt-card.is-fav .drt-star'))
     await tick()
-    check('再点星星取消收藏', rt.favorites() === 0 && rt.zoneCount('Fav') === '0', rt.counts().join('|'))
+    check('再点星星取消收藏后整块消失', rt.favorites() === 0 && !rt.container.querySelector('.drt-sectionFav') && rt.zoneCount('Fav') === '', rt.zoneLabels().join('|'))
     check('取消后回到未读区', rt.unreads() === 1 && rt.unreadTitles()[0] === '对话 1', rt.unreadTitles().join('|'))
     check('取消后本地存储清掉', (localStorage.getItem('dsh.recent-tasks.favorites.v1') || '').indexOf('s01') < 0,
       localStorage.getItem('dsh.recent-tasks.favorites.v1'))
@@ -721,6 +720,21 @@ const harness = String.raw`
     check('点后回到已完成区第一名', rt.rowTitles()[0] === '对话 1', rt.rowTitles().join('|'))
     check('点后本地存储清掉该会话', (localStorage.getItem('dsh.recent-tasks.unread.v1') || '').indexOf('s01') < 0,
       localStorage.getItem('dsh.recent-tasks.unread.v1'))
+    rt.unmount()
+
+    // 3b1. the 收藏 band takes room only while it holds a row
+    localStorage.clear()
+    rt = makeRuntime()
+    rt.finishRun('s01')
+    await tick()
+    check('没有收藏时收藏区不占位', !rt.container.querySelector('.drt-sectionFav'), rt.zoneLabels().join('|'))
+    click(rt.container.querySelector('.drt-card.is-done .drt-star'))
+    await tick()
+    check('收藏一条后回归四区顺序', rt.zoneLabels().join('|') === '正在运行|收藏|未读|已完成', rt.zoneLabels().join('|'))
+    click(rt.container.querySelector('.drt-card.is-fav .drt-star'))
+    await tick()
+    check('取消最后一条收藏后收藏区消失', !rt.container.querySelector('.drt-sectionFav') && rt.zoneLabels().join('|') === '正在运行|未读|已完成',
+      rt.zoneLabels().join('|'))
     rt.unmount()
 
     // 3b2. a starred running session leaves 正在运行, and the band says where it went

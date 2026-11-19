@@ -5,15 +5,16 @@
 #   tools/sync-to-dsh.sh --check   # 只对比，不一致时退出码 1
 #
 # 可覆盖的目录（一般不用）：
-#   DSH_PROFILE       默认 ~/.dsh/profiles/desktop
-#   DSH_RUN_DIR       默认 $DSH_PROFILE/created-plugins/<本机插件 id>
+#   DSH_PROFILE_DIR   默认 ~/.dsh/profiles/desktop（DSH 自己导出的就是它）
+#   DSH_RUN_DIR       默认 $DSH_PROFILE_DIR/created-plugins/<本机插件 id>
 #   DSH_MIRROR_DIR    默认 工作区里的 .dsh-created-plugins/<本机插件 id>
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 ID='8c716ee6-17d5-46ae-b021-c82f36d0f6c1'
-PROFILE="${DSH_PROFILE:-$HOME/.dsh/profiles/desktop}"
+# 注意：不要用 $DSH_PROFILE，DSH 把它设成档名（desktop），拿来拼路径会变成相对路径。
+PROFILE="${DSH_PROFILE_DIR:-$HOME/.dsh/profiles/desktop}"
 RUN="${DSH_RUN_DIR:-$PROFILE/created-plugins/$ID}"
 MIRROR="${DSH_MIRROR_DIR:-/Users/lnq/Documents/DSH 工作区/.dsh-created-plugins/$ID}"
 FILES=(
