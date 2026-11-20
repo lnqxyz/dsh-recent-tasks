@@ -22,8 +22,25 @@ window.__ModuleLoader__.load({
     const FAV_KEY = 'dsh.recent-tasks.favorites.v1'
     /** Activity window required by the entry: sessions touched within this span. */
     const ACTIVITY_WINDOW_MS = 10 * 24 * 60 * 60 * 1000
-    /** The sweep button keeps this much history on screen and archives what is older. */
-    const SWEEP_KEEP_DAYS = 7
+    /**
+     * The sweep window, until the settings row says otherwise. The Host half
+     * declares `keepDays` there; the page reads it at runtime and falls back to
+     * this number whenever that row is missing (an older build, a build whose
+     * settings service never arrives).
+     */
+    const DEFAULT_KEEP_DAYS = 7
+    /** The row this bundle's patch inserts; the plugin manager keys its card by `<package>#<row>`. */
+    const ROW_ID = PKG + ':recent-tasks'
+    /**
+     * What Settings calls that row. A bundled patch is applied through an
+     * include group, so the live entry id carries that prefix; `settingsNamespace`
+     * still looks the real one up at runtime in case that wrapping ever changes.
+     */
+    const SETTINGS_NS = 'include:' + ROW_ID
+    /** Where the host row stores the number, and where ConfigFormController looks it up. */
+    const KEEP_DAYS_FIELD = 'keepDays'
+    /** Both spellings the loader may use for this row's id. */
+    const ROW_IDS = [ROW_ID, SETTINGS_NS]
     /** Rows shown on arrival; a full page leaves room for more than the short sidebar list. */
     const COLLAPSED_ROWS = 15
     /** Extra rows revealed by one 【展开其余】, so a long history stays scannable. */
@@ -33,8 +50,13 @@ window.__ModuleLoader__.load({
     const MINUTE_MS = 60 * 1000
     const HOUR_MS = 60 * MINUTE_MS
     const DAY_MS = 24 * HOUR_MS
-    /** What the sweep button leaves alone: anything touched inside this span. */
-    const SWEEP_KEEP_MS = SWEEP_KEEP_DAYS * DAY_MS
+    /** The same span the Host schema accepts, so a bad number can never narrow the sweep. */
+    const MIN_KEEP_DAYS = 1
+    const MAX_KEEP_DAYS = 365
+    /** How long one archived batch can still be taken back, in milliseconds. */
+    const UNDO_WINDOW_MS = 30 * 1000
+    /** The countdown is seconds wide, so it cannot ride the once-a-minute page clock. */
+    const UNDO_TICK_MS = 250
     /** Per-tab intent: after a refresh rebuilds the page, open this panel again. */
     const REOPEN_KEY = 'dsh.recent-tasks.reopen.v1'
     /** A rebuild takes seconds; an older intent describes a click the person has left behind. */
@@ -69,21 +91,38 @@ window.__ModuleLoader__.load({
       'page.loading': '正在读取会话…',
       'page.more': '展开其余 {n} 个对话',
       'page.less': '收起',
-      'page.sweep': '只留 7 天',
-      'page.sweepHint': '把 7 天以前的会话归档，页面上只留下最近 7 天的',
+      'page.sweep': '只留 {days} 天',
+      'page.sweepHint': '把 {days} 天以前的会话归档，页面上只留下最近 {days} 天的',
       'page.sweeping': '整理中…',
       'sweep.title': '归档更早的会话',
-      'sweep.hint': '这会把 7 天以前的 {n} 个会话移进归档，页面上只留下最近 7 天的。归档可以恢复，不会删除任何内容。',
+      'sweep.hint': '这会把 {days} 天以前的 {n} 个会话移进归档，页面上只留下最近 {days} 天的。归档可以恢复，不会删除任何内容。',
       'sweep.favNote': '另外 {n} 个更早的收藏会留在收藏区，不会被归档。',
       'sweep.liveNote': '其中 {n} 个还在运行的先不动，等它们跑完下次再清。',
       'sweep.confirm': '归档 {n} 个',
       'sweep.cancel': '取消',
-      'sweep.none': '7 天以前的会话已经没有了。',
-      'sweep.noneFav': '7 天以前的会话都在收藏里，这里没有可归档的。',
-      'sweep.noneLive': '7 天以前的会话都还在运行，等它们跑完再清。',
+      'sweep.none': '{days} 天以前的会话已经没有了。',
+      'sweep.noneFav': '{days} 天以前的会话都在收藏里，这里没有可归档的。',
+      'sweep.noneLive': '{days} 天以前的会话都还在运行，等它们跑完再清。',
       'sweep.done': '已归档 {n} 个会话。',
       'sweep.failed': '{n} 个没能归档：{message}',
       'sweep.unavailable': '当前界面不支持归档会话。',
+      'sweep.undoHint': '刚归档 {n} 个会话',
+      'sweep.undo': '撤销 · {n}s',
+      'sweep.undoing': '撤销中…',
+      'sweep.undone': '已恢复 {n} 个会话。',
+      'sweep.undoFailed': '{n} 个没能恢复：{message}',
+      'sweep.undoUnavailable': '当前界面不支持恢复会话。',
+      'config.title': '只留几天',
+      'config.summary': '只留最近 {days} 天',
+      'config.field': '保留天数',
+      'config.unit': '天',
+      'config.hint': '比这更早的会话会被【只留 {days} 天】收进归档。归档不删除任何内容，随时可以恢复。',
+      'config.save': '保存',
+      'config.saved': '已保存，页面按 {days} 天工作。',
+      'config.invalid': '请填 {min} 到 {max} 之间的整数。',
+      'config.saveFailed': '没能保存：{message}',
+      'config.loading': '正在读取设置…',
+      'config.unavailable': '这版界面没有提供设置入口，页面按默认的 {days} 天工作。',
       'section.running': '正在运行',
       'section.fav': '收藏',
       'section.unread': '未读',
@@ -127,21 +166,38 @@ window.__ModuleLoader__.load({
       'page.loading': 'Loading sessions…',
       'page.more': 'Show the remaining {n}',
       'page.less': 'Show less',
-      'page.sweep': 'Keep 7 days',
-      'page.sweepHint': 'Archive everything older than 7 days, keeping only the last week on this page',
+      'page.sweep': 'Keep {days} days',
+      'page.sweepHint': 'Archive everything older than {days} days, keeping only the last {days} days on this page',
       'page.sweeping': 'Tidying…',
       'sweep.title': 'Archive older sessions',
-      'sweep.hint': 'This moves the {n} sessions older than 7 days into the archive and leaves only the last week here. Archiving is reversible and deletes nothing.',
+      'sweep.hint': 'This moves the {n} sessions older than {days} days into the archive and leaves only the last {days} days here. Archiving is reversible and deletes nothing.',
       'sweep.favNote': '{n} older starred sessions stay in Favorites and are not archived.',
       'sweep.liveNote': '{n} of them are still running and stay put until they finish.',
       'sweep.confirm': 'Archive {n}',
       'sweep.cancel': 'Cancel',
-      'sweep.none': 'Nothing older than 7 days is left.',
-      'sweep.noneFav': 'Every session older than 7 days is starred, so there is nothing to archive.',
-      'sweep.noneLive': 'Every session older than 7 days is still running; clear them once they finish.',
+      'sweep.none': 'Nothing older than {days} days is left.',
+      'sweep.noneFav': 'Every session older than {days} days is starred, so there is nothing to archive.',
+      'sweep.noneLive': 'Every session older than {days} days is still running; clear them once they finish.',
       'sweep.done': 'Archived {n} sessions.',
       'sweep.failed': '{n} could not be archived: {message}',
       'sweep.unavailable': 'This interface cannot archive sessions.',
+      'sweep.undoHint': 'Just archived {n} sessions',
+      'sweep.undo': 'Undo · {n}s',
+      'sweep.undoing': 'Undoing…',
+      'sweep.undone': 'Restored {n} sessions.',
+      'sweep.undoFailed': '{n} could not be restored: {message}',
+      'sweep.undoUnavailable': 'This interface cannot restore sessions.',
+      'config.title': 'Keep days',
+      'config.summary': 'Keeping the last {days} days',
+      'config.field': 'Days to keep',
+      'config.unit': 'days',
+      'config.hint': 'Sessions older than this are archived by 【Keep {days} days】. Archiving deletes nothing and can always be undone.',
+      'config.save': 'Save',
+      'config.saved': 'Saved. The page now keeps {days} days.',
+      'config.invalid': 'Enter a whole number between {min} and {max}.',
+      'config.saveFailed': 'Could not save: {message}',
+      'config.loading': 'Reading settings…',
+      'config.unavailable': 'This interface has no settings entry, so the page keeps the default {days} days.',
       'section.running': 'Running now',
       'section.fav': 'Favorites',
       'section.unread': 'Unread',
@@ -201,6 +257,24 @@ window.__ModuleLoader__.load({
       '.drt-notice{margin:0;font-size:12px;line-height:1.6;color:var(--dsw-alias-state-error-primary)}',
       '.drt-notice.is-info{color:var(--dsw-alias-label-secondary)}',
       '.drt-notice.is-success{color:var(--dsw-alias-state-success-primary)}',
+      // The undo bar is the only place a swept batch can come back from, so it
+      // sits right under the header and stays until the window closes.
+      '.drt-undo{flex:none;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:9px;background:var(--dsw-alias-card-fill)}',
+      '.drt-undoText{flex:1;min-width:0;font-size:12.5px;line-height:1.5;color:var(--dsw-alias-label-secondary)}',
+      '.drt-undoAction{flex:none;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;background:transparent;color:var(--dsw-alias-state-business-primary);padding:5px 11px;font-family:inherit;font-size:12.5px;line-height:1.4;cursor:pointer}',
+      '.drt-undoAction:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}',
+      '.drt-undoAction:disabled{opacity:.55;cursor:default}',
+      // Settings card lives in the plugin manager, not on the page: it only
+      // reads and writes the one volatile field.
+      '.drt-config{display:flex;flex-direction:column;gap:10px;padding:2px 0}',
+      '.drt-configTitle{margin:0;font-size:13.5px;font-weight:600;line-height:1.5;color:var(--dsw-alias-label-primary)}',
+      '.drt-configRow{display:flex;align-items:center;gap:10px}',
+      '.drt-configLabel{font-size:13px;color:var(--dsw-alias-label-primary)}',
+      '.drt-configInput{width:84px;padding:5px 9px;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-family:inherit;font-size:13px;line-height:1.4}',
+      '.drt-configInput:disabled{opacity:.55}',
+      '.drt-configUnit{font-size:12.5px;color:var(--dsw-alias-label-tertiary)}',
+      '.drt-configHint{margin:0;font-size:12px;line-height:1.6;color:var(--dsw-alias-label-tertiary)}',
+      '.drt-configError{margin:0;font-size:12px;line-height:1.6;color:var(--dsw-alias-state-error-primary)}',
       '.drt-foot{flex:none;display:flex;justify-content:center}',
       '.drt-more{border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-state-business-primary);padding:7px 14px;font-family:inherit;font-size:13.5px;cursor:pointer}',
       '.drt-more:hover{background:var(--dsw-alias-interactive-bg-hover)}',
@@ -668,6 +742,82 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Clamps whatever the settings row holds into the window the Host accepts.
+     * A missing row, a stale value or a hand-edited number all land on the
+     * default instead of narrowing or breaking the sweep.
+     * @param value - the raw field value, of any type.
+     * @returns a whole number of days within the accepted span.
+     */
+    function normalizeKeepDays(value) {
+      const number = Number(value)
+      if (!Number.isFinite(number)) return DEFAULT_KEEP_DAYS
+      return Math.min(MAX_KEEP_DAYS, Math.max(MIN_KEEP_DAYS, Math.round(number)))
+    }
+
+    /**
+     * The namespace Settings files this row under, discovered from the service.
+     * A bundled patch is applied through an include group, so the live entry id
+     * carries that prefix; any other wrapping is read back from the service.
+     * @param configForms - the settings client service, when the build has one.
+     * @returns the namespace to ask for, with the declared id as the last resort.
+     */
+    function settingsNamespace(configForms) {
+      const wanted = [SETTINGS_NS, ROW_ID]
+      try {
+        const mirror = configForms && typeof configForms.describe === 'function' ? configForms.describe() : null
+        const snapshot = mirror && typeof mirror.getSnapshot === 'function' ? mirror.getSnapshot() : null
+        const namespaces = snapshot && snapshot.view && Array.isArray(snapshot.view.namespaces)
+          ? snapshot.view.namespaces
+          : []
+        for (const candidate of namespaces) {
+          if (wanted.indexOf(candidate) !== -1) return candidate
+        }
+        for (const candidate of namespaces) {
+          if (typeof candidate === 'string' && candidate.endsWith(':' + NS)) return candidate
+        }
+      } catch {
+        /* the settings service is optional: the fallback window still works */
+      }
+      return SETTINGS_NS
+    }
+
+    /**
+     * Reads the sweep window the Host carries in this plugin's settings row.
+     * The service and its namespaces both arrive asynchronously, so this looks
+     * again whenever either one publishes, and falls back to the default
+     * whenever the build has no settings surface at all.
+     * @param host - the injected face.
+     * @returns the number of days to keep on this page.
+     */
+    function useKeepDaysForm(configForms) {
+      const mirror = configForms && typeof configForms.describe === 'function' ? configForms.describe() : undefined
+      const served = useObservable(mirror)
+      const namespace = React.useMemo(() => settingsNamespace(configForms), [configForms, served])
+      const form = React.useMemo(() => {
+        if (!configForms || typeof configForms.get !== 'function') return undefined
+        try {
+          return configForms.get(namespace)
+        } catch {
+          return undefined
+        }
+      }, [configForms, namespace])
+      const snapshot = useObservable(form)
+      return { form, snapshot, namespace }
+    }
+
+    /**
+     * @param configForms - the settings client service, when the build has one.
+     * @returns the number of days to keep on this page.
+     */
+    function useKeepDays(configForms) {
+      const { snapshot } = useKeepDaysForm(configForms)
+      const value = snapshot && snapshot.value && typeof snapshot.value === 'object'
+        ? snapshot.value[KEEP_DAYS_FIELD]
+        : undefined
+      return normalizeKeepDays(value)
+    }
+
+    /**
      * Subscribe to a Host/Catalog observable snapshot.
      * @param source - `{ getSnapshot, subscribe }`, or undefined when the service is absent.
      * @returns the current snapshot, re-rendering on change.
@@ -711,6 +861,25 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer)
       }, [intervalMs])
       return now
+    }
+
+    /**
+     * Seconds left on an offer that expires, counted down on its own fast clock.
+     * The page clock is a minute wide, so it would show a stale number and hold
+     * the bar up after the offer is gone.
+     * @param until - the epoch millisecond the offer dies at, or null when none.
+     * @returns the whole seconds left, never below zero.
+     */
+    function useSecondsLeft(until) {
+      const [now, setNow] = React.useState(() => Date.now())
+      React.useEffect(() => {
+        if (until === null) return undefined
+        setNow(Date.now())
+        const timer = setInterval(() => setNow(Date.now()), UNDO_TICK_MS)
+        return () => clearInterval(timer)
+      }, [until])
+      if (until === null) return 0
+      return Math.max(0, Math.ceil((until - now) / 1000))
     }
 
     /** @returns {Array} the Host-authoritative Workspace rows, or [] while unknown. */
@@ -838,6 +1007,126 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Dictionary lookup for seats that mount outside the page's injected face
+     * (the settings card). Bound once per plugin instance in `apply`.
+     */
+    let translateKey = (key, params) => key
+
+    /**
+     * Bind `translateKey` to this Client context's locale service.
+     * @param ctx - Client root context.
+     */
+    function bindTranslate(ctx) {
+      translateKey = (key, params) => ctx.locale.bind(NS)(key, params)
+    }
+
+    /**
+     * Settings card for this plugin's one field, rendered inside the plugin
+     * manager. The page itself never edits the window: it only reads what this
+     * card writes, so a stray click on the page cannot narrow the sweep.
+     * @param props - `{ view, form }` from the row's configuration seat.
+     * @returns the summary line, or the whole card for the page view.
+     */
+    function KeepDaysConfig(props) {
+      const form = props ? props.form : undefined
+      const t = translateKey
+      if (props && props.view === 'summary') {
+        const snapshot = form && typeof form.getSnapshot === 'function' ? form.getSnapshot() : undefined
+        const value = snapshot && snapshot.value && typeof snapshot.value === 'object'
+          ? snapshot.value[KEEP_DAYS_FIELD]
+          : undefined
+        return t('config.summary', { days: normalizeKeepDays(value) })
+      }
+      return keepDaysCard(form, t)
+    }
+
+    /**
+     * The editable half of the settings card, written as a plain render body so
+     * the seat mounts it directly: it keeps a local draft so typing is never
+     * reverted by a publish from the Host, and only writes on Save.
+     * @param form - the settings controller for this row.
+     * @param t - the dictionary lookup.
+     * @returns the card body.
+     */
+    function keepDaysCard(form, t) {
+      const snapshot = useObservable(form)
+      const stored = snapshot && snapshot.value && typeof snapshot.value === 'object'
+        ? snapshot.value[KEEP_DAYS_FIELD]
+        : undefined
+      const storedDays = normalizeKeepDays(stored)
+      const [draft, setDraft] = React.useState(() => String(storedDays))
+      const [note, setNote] = React.useState(null)
+      const [saving, setSaving] = React.useState(false)
+      // A publish that names a different number is the Host winning: adopt it.
+      const seen = React.useRef(storedDays)
+      React.useEffect(() => {
+        if (seen.current === storedDays) return
+        seen.current = storedDays
+        setDraft(String(storedDays))
+      }, [storedDays])
+      const typed = Number(draft)
+      const valid = Number.isFinite(typed) && typed >= MIN_KEEP_DAYS && typed <= MAX_KEEP_DAYS
+        && Math.round(typed) === typed
+      const writable = snapshot === undefined || snapshot.writable !== false
+      const save = async () => {
+        if (!valid || saving || !form || typeof form.set !== 'function') return
+        setSaving(true)
+        setNote(null)
+        let ok = false
+        try {
+          ok = await form.set(KEEP_DAYS_FIELD, typed)
+        } catch (error) {
+          setNote({ tone: 'error', text: t('config.saveFailed', { message: messageOf(error) }) })
+          setSaving(false)
+          return
+        }
+        setSaving(false)
+        setNote(ok === false
+          ? { tone: 'error', text: t('config.saveFailed', { message: t('config.unavailable', { days: DEFAULT_KEEP_DAYS }) }) }
+          : { tone: 'success', text: t('config.saved', { days: normalizeKeepDays(typed) }) })
+      }
+      const unavailable = form === undefined && snapshot === undefined
+      return h('div', { className: 'drt-config' },
+        h('h4', { className: 'drt-configTitle' }, t('config.title')),
+        h('div', { className: 'drt-configRow' },
+          h('label', { className: 'drt-configLabel', htmlFor: 'drt-keep-days' }, t('config.field')),
+          h('input', {
+            id: 'drt-keep-days',
+            className: 'drt-configInput',
+            type: 'number',
+            min: MIN_KEEP_DAYS,
+            max: MAX_KEEP_DAYS,
+            step: 1,
+            value: draft,
+            disabled: unavailable || !writable || saving,
+            onChange: event => {
+              setDraft(event.target.value)
+              setNote(null)
+            },
+            onKeyDown: event => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                void save()
+              }
+            },
+          }),
+          h('span', { className: 'drt-configUnit' }, t('config.unit')),
+          h('button', {
+            type: 'button',
+            className: 'drt-undoAction',
+            disabled: unavailable || !writable || saving || !valid || typed === storedDays,
+            onClick: () => { void save() },
+          }, saving ? t('config.loading') : t('config.save')),
+        ),
+        h('p', { className: 'drt-configHint' }, unavailable
+          ? t('config.unavailable', { days: DEFAULT_KEEP_DAYS })
+          : t('config.hint', { days: storedDays })),
+        valid ? null : h('p', { className: 'drt-configError' }, t('config.invalid', { min: MIN_KEEP_DAYS, max: MAX_KEEP_DAYS })),
+        note === null ? null : h('p', { className: note.tone === 'error' ? 'drt-configError' : 'drt-configHint' }, note.text),
+      )
+    }
+
+    /**
      * The page mounted in the `main` seat under this plugin's key.
      * @param props - the injected face: `{ host }` plus the framework's share.
      * @returns the recent-tasks page.
@@ -851,6 +1140,15 @@ window.__ModuleLoader__.load({
       const uiSession = host.uiSession
       const statusState = useObservable(uiSession ? uiSession.sessionStatus : undefined)
       const now = useNow(CLOCK_TICK_MS)
+      // The sweep window lives in this plugin's settings row, so the person
+      // changes it in Settings rather than on the page; the page only reads it.
+      const keepDaysSettings = useKeepDaysForm(host.configForms)
+      const keepDaysValue = keepDaysSettings.snapshot && keepDaysSettings.snapshot.value
+        && typeof keepDaysSettings.snapshot.value === 'object'
+        ? keepDaysSettings.snapshot.value[KEEP_DAYS_FIELD]
+        : undefined
+      const keepDays = normalizeKeepDays(keepDaysValue)
+      const keepMs = keepDays * DAY_MS
       const [shown, setShown] = React.useState(COLLAPSED_ROWS)
       const [unreadIds, setUnreadIds] = React.useState(readUnread)
       const [favoriteIds, setFavoriteIds] = React.useState(readFavorites)
@@ -859,6 +1157,10 @@ window.__ModuleLoader__.load({
       const [notice, setNotice] = React.useState(null)
       const [sweeper, setSweeper] = React.useState(null)
       const [sweeping, setSweeping] = React.useState(false)
+      // Restorable batch: what the last sweep archived and until when it can be
+      // taken back. It names no timer of its own — the clock tick re-reads it.
+      const [undo, setUndo] = React.useState(null)
+      const [undoing, setUndoing] = React.useState(false)
 
       const favoriteSet = React.useMemo(() => new Set(favoriteIds), [favoriteIds])
       const rows = React.useMemo(
@@ -1080,6 +1382,32 @@ window.__ModuleLoader__.load({
       }
 
       /**
+       * Takes one Session back out of the archive through whichever service the
+       * build exposes, mirroring `archiveOne`.
+       * @param id - the Session to restore.
+       */
+      const unarchiveOne = async id => {
+        const uiWorkspace = host.uiWorkspace
+        if (uiWorkspace && typeof uiWorkspace.unarchiveSession === 'function') {
+          await uiWorkspace.unarchiveSession(id)
+          return
+        }
+        const workspaces = host.workspaces
+        if (workspaces && typeof workspaces.unarchiveSession === 'function') {
+          await workspaces.unarchiveSession(id)
+          return
+        }
+        throw new Error(t('sweep.undoUnavailable'))
+      }
+
+      const canUnarchive = () => {
+        const uiWorkspace = host.uiWorkspace
+        if (uiWorkspace && typeof uiWorkspace.unarchiveSession === 'function') return true
+        const workspaces = host.workspaces
+        return Boolean(workspaces && typeof workspaces.unarchiveSession === 'function')
+      }
+
+      /**
        * What the sweep would archive, read straight from the Session list rather
        * than from `rows`: rows stop at the ten-day window, and an old session
        * must still be swept even though this page never lists it.
@@ -1095,7 +1423,7 @@ window.__ModuleLoader__.load({
           if (!session || session.origin === 'subagent') continue
           if (archived.has(id)) continue
           const at = typeof session.updatedAt === 'number' ? session.updatedAt : 0
-          if (at <= 0 || now - at <= SWEEP_KEEP_MS) continue
+          if (at <= 0 || now - at <= keepMs) continue
           if (favoriteSet.has(id)) {
             plan.kept += 1
             continue
@@ -1123,7 +1451,7 @@ window.__ModuleLoader__.load({
           const key = sweepPlan.kept > 0
             ? 'sweep.noneFav'
             : sweepPlan.live > 0 ? 'sweep.noneLive' : 'sweep.none'
-          setNotice({ tone: 'info', text: t(key) })
+          setNotice({ tone: 'info', text: t(key, { days: keepDays }) })
           return
         }
         setSweeper({
@@ -1138,18 +1466,24 @@ window.__ModuleLoader__.load({
         const ids = sweeper.ids
         setSweeping(true)
         setSweeper(null)
-        let done = 0
+        const archived = []
         let message = ''
         for (const id of ids) {
           try {
             await archiveOne(id)
-            done += 1
+            archived.push(id)
           } catch (error) {
             if (message === '') message = messageOf(error)
           }
         }
         setSweeping(false)
+        const done = archived.length
         const failed = ids.length - done
+        // Only what actually moved can be moved back, and only while the
+        // window lasts; the bar reads this one record.
+        setUndo(done === 0 || !canUnarchive()
+          ? null
+          : { ids: archived.slice(), until: Date.now() + UNDO_WINDOW_MS })
         if (done > 0) {
           setNotice({
             tone: failed === 0 ? 'success' : 'error',
@@ -1161,6 +1495,58 @@ window.__ModuleLoader__.load({
         }
         setNotice({ tone: 'error', text: t('sweep.failed', { n: failed, message }) })
       }
+
+      /**
+       * Puts a just-swept batch back. The window is the whole contract: once it
+       * closes the offer is gone, and the archive keeps the sessions until the
+       * person restores them from there.
+       */
+      const runUndo = async () => {
+        if (undo === null || undoing) return
+        const ids = undo.ids
+        setUndoing(true)
+        // The bar stays while the work runs so the press visibly lands; it is
+        // cleared at the end, and the notice says how it went.
+        const restored = []
+        let message = ''
+        for (const id of ids) {
+          try {
+            await unarchiveOne(id)
+            restored.push(id)
+          } catch (error) {
+            if (message === '') message = messageOf(error)
+          }
+        }
+        setUndoing(false)
+        setUndo(null)
+        const failed = ids.length - restored.length
+        setNotice(failed === 0
+          ? { tone: 'success', text: t('sweep.undone', { n: restored.length }) }
+          : { tone: 'error', text: t('sweep.undoFailed', { n: failed, message }) })
+      }
+
+      // The offer dies on the clock, not on a click: once the last second is
+      // spent the bar goes away even if the person is looking elsewhere. A run
+      // already under way keeps its bar until it reports back.
+      const undoSeconds = useSecondsLeft(undo === null ? null : undo.until)
+      React.useEffect(() => {
+        if (undo === null || undoSeconds > 0 || undoing) return
+        setUndo(null)
+      }, [undo, undoSeconds, undoing])
+
+      const undoBar = undo === null
+        ? null
+        : h('div', { className: 'drt-undo', role: 'status' },
+          h('span', { className: 'drt-undoText' }, t('sweep.undoHint', { n: undo.ids.length })),
+          h('button', {
+            type: 'button',
+            className: 'drt-undoAction',
+            disabled: undoing,
+            onClick: () => { void runUndo() },
+          }, undoing
+            ? t('sweep.undoing')
+            : t('sweep.undo', { n: undoSeconds })),
+        )
 
       const foot = doneRows.length > COLLAPSED_ROWS
         ? h('div', { className: 'drt-foot' },
@@ -1387,7 +1773,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'drt-dialogHead' },
             h('h3', { className: 'drt-dialogTitle' }, t('sweep.title')),
           ),
-          h('p', { className: 'drt-dialogHint' }, t('sweep.hint', { n: sweeper.ids.length })),
+          h('p', { className: 'drt-dialogHint' }, t('sweep.hint', { n: sweeper.ids.length, days: keepDays })),
           sweeper.kept > 0 ? h('p', { className: 'drt-dialogHint' }, t('sweep.favNote', { n: sweeper.kept })) : null,
           sweeper.live > 0 ? h('p', { className: 'drt-dialogHint' }, t('sweep.liveNote', { n: sweeper.live })) : null,
           h('div', { className: 'drt-dialogFoot' },
@@ -1414,10 +1800,10 @@ window.__ModuleLoader__.load({
                 type: 'button',
                 className: 'drt-sweep',
                 disabled: busy || sweeping,
-                title: t('page.sweepHint'),
-                'aria-label': t('page.sweepHint'),
+                title: t('page.sweepHint', { days: keepDays }),
+                'aria-label': t('page.sweepHint', { days: keepDays }),
                 onClick: onSweep,
-              }, SweepGlyph(), t(sweeping ? 'page.sweeping' : 'page.sweep')),
+              }, SweepGlyph(), t(sweeping ? 'page.sweeping' : 'page.sweep', { days: keepDays })),
               h('button', {
                 type: 'button',
                 className: 'drt-ghost',
@@ -1434,6 +1820,7 @@ window.__ModuleLoader__.load({
             ),
           ),
           notice ? h('p', { className: 'drt-notice' + (notice.tone === 'info' ? ' is-info' : notice.tone === 'success' ? ' is-success' : '') }, notice.text) : null,
+          undoBar,
           body,
         ),
         dialog,
@@ -1813,6 +2200,7 @@ window.__ModuleLoader__.load({
         get uiWorkspace() { return ctx.get('uiWorkspace') },
         get uiSession() { return ctx.get('uiSession') },
         get remote() { return ctx.get('remote') },
+        get configForms() { return ctx.get('configForms') },
         t: (key, params) => ctx.locale.bind(NS)(key, params),
       }
     }
@@ -1823,6 +2211,7 @@ window.__ModuleLoader__.load({
       inject: ['slots', 'locale', 'layout', 'sessions', 'workspaces'],
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }), 'recent-tasks: dictionaries')
+        bindTranslate(ctx)
         ctx.effect(() => injectStyle(), 'recent-tasks: styles')
         const host = createHost(ctx)
         ctx.effect(() => {
@@ -1837,6 +2226,18 @@ window.__ModuleLoader__.load({
             label: () => ctx.locale.bind(NS)('entry.label'),
             locale: NS,
           }, PanelGlyph)))
+          // The plugin manager asks for this row's configuration twice: a
+          // summary line next to the description, and the card itself inside
+          // `<section data-plugin-config>`. The key is `<package>#<row id>`,
+          // and the row id is spelled differently depending on how the loader
+          // grouped the row, so both spellings are offered.
+          for (const rowId of ROW_IDS) {
+            disposers.push(slots.inject('plugins.row.config', () => slots.register({
+              name: 'plugins.row.config',
+              key: PKG + '#' + rowId,
+              locale: NS,
+            }, KeepDaysConfig)))
+          }
           disposers.push(slots.inject('main', () => slots.register({
             name: 'main',
             key: PANEL_ID,

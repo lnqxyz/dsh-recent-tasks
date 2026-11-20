@@ -335,8 +335,76 @@ const harness = String.raw`
       for (const listener of panelListeners.slice()) listener()
     }
     const disposers = []
+    // Registrations onto the plugin manager's per-row configuration seat.
+    const configSeats = []
+    // Extra mounts made by the tests (row-config views), torn down with the page.
+    const disposed = []
+
+    // Settings: a mirror of what namespaces exist, plus one controller per row.
+    const keepDaysState = { days: opts.keepDays === undefined ? 7 : opts.keepDays, revision: 1 }
+    const settingsListeners = []
+    function publishSettings() {
+      for (const listener of settingsListeners.slice()) listener()
+    }
+    function settingsNamespaces() {
+      return opts.noSettings ? [] : ['include:@dsh-local/view-8c716ee6-17d5-46ae-b021-c82f36d0f6c1:recent-tasks']
+    }
+    function makeConfigForm(namespace) {
+      return {
+        getSnapshot: () => ({
+          status: 'ready',
+          value: { keepDays: keepDaysState.days },
+          base: { keepDays: 7 },
+          user: { keepDays: keepDaysState.days },
+          revision: keepDaysState.revision,
+          writable: opts.readOnlySettings !== true,
+        }),
+        subscribe: listener => {
+          settingsListeners.push(listener)
+          return () => {
+            const at = settingsListeners.indexOf(listener)
+            if (at >= 0) settingsListeners.splice(at, 1)
+          }
+        },
+        set: async (field, value) => {
+          calls.push(['configForms.set', namespace, field, value])
+          if (opts.setFails) return false
+          if (field === 'keepDays') keepDaysState.days = value
+          keepDaysState.revision += 1
+          publishSettings()
+          return true
+        },
+        mutate: async (ops, revision) => {
+          calls.push(['configForms.mutate', namespace, ops, revision])
+          return true
+        },
+      }
+    }
+
+    // The real service hands back one stable mirror and one controller per
+    // namespace; handing out fresh objects would re-subscribe on every render.
+    const settingsMirror = {
+      getSnapshot: () => ({ status: 'ready', view: { namespaces: settingsNamespaces() } }),
+      subscribe: listener => {
+        settingsListeners.push(listener)
+        return () => {
+          const at = settingsListeners.indexOf(listener)
+          if (at >= 0) settingsListeners.splice(at, 1)
+        }
+      },
+      ensure() {},
+    }
+    const formByNamespace = new Map()
 
     const services = {
+      configForms: {
+        describe: () => settingsMirror,
+        get(namespace) {
+          calls.push(['configForms.get', namespace])
+          if (!formByNamespace.has(namespace)) formByNamespace.set(namespace, makeConfigForm(namespace))
+          return formByNamespace.get(namespace)
+        },
+      },
       uiSession: {
         sessionStatus: {
           getSnapshot: () => new Map(statusById),
@@ -402,6 +470,19 @@ const harness = String.raw`
           installArchived(archived)
           return { archivedSessionIds: archived }
         },
+        // Official contract mirrors archiveSession: throws while the session is
+        // still busy, and installs the whole remaining set on success.
+        unarchiveSession: async (id, options) => {
+          calls.push(['workspaces.unarchiveSession', id, options])
+          if (opts.unarchiveFails && opts.unarchiveFails.indexOf(id) >= 0) {
+            const error = new Error('这个会话还在运行')
+            error.name = 'WorkspaceUnarchiveError'
+            throw error
+          }
+          const archived = workspaceState.archivedSessionIds.filter(entry => entry !== id)
+          installArchived(archived)
+          return { archivedSessionIds: archived }
+        },
       },
       layout: {
         selectPanel: id => {
@@ -453,6 +534,10 @@ const harness = String.raw`
           calls.push(['uiWorkspace.archiveSession', id, options])
           await services.workspaces.archiveSession(id, options)
         },
+        unarchiveSession: async (id, options) => {
+          calls.push(['uiWorkspace.unarchiveSession', id, options])
+          await services.workspaces.unarchiveSession(id, options)
+        },
         pickDirectory: async () => '/Users/lnq/工作/新文件夹',
         listDirectory: async () => [],
       },
@@ -462,6 +547,14 @@ const harness = String.raw`
     if (opts.noArchive) {
       delete services.uiWorkspace.archiveSession
       delete services.workspaces.archiveSession
+      delete services.uiWorkspace.unarchiveSession
+      delete services.workspaces.unarchiveSession
+    }
+
+    // A build with archiving but no way back: the undo bar must not appear.
+    if (opts.noUnarchive) {
+      delete services.uiWorkspace.unarchiveSession
+      delete services.workspaces.unarchiveSession
     }
 
     if (opts.remote) {
@@ -500,6 +593,9 @@ const harness = String.raw`
         inject(seat, register) { register(); return () => {} },
         register(definition, component) {
           if (definition.name === 'main') captured = { definition, component }
+          if (definition.name === 'plugins.row.config') {
+            configSeats.push({ key: definition.key, definition, component })
+          }
           return () => {}
         },
       },
@@ -617,6 +713,10 @@ const harness = String.raw`
       text() { return container.textContent },
       /** The archive set the workspaces service reports. */
       archivedIds() { return workspaceState.archivedSessionIds.slice() },
+      /** The undo bar under the header, or null when there is nothing to undo. */
+      undoBar() { return container.querySelector('.drt-undo') },
+      undoText() { const el = container.querySelector('.drt-undo'); return el ? el.textContent : '' },
+      undoAction() { return container.querySelector('.drt-undo .drt-undoAction') },
       /** The header's sweep button, or null when the header lacks it. */
       sweepButton() { return container.querySelector('.drt-sweep') },
       sweepText() { const el = container.querySelector('.drt-sweep'); return el ? el.textContent : '' },
@@ -642,8 +742,24 @@ const harness = String.raw`
         }
         return null
       },
+      /** Row-config seats this plugin registered, in registration order. */
+      configKeys() { return configSeats.map(seat => seat.key) },
+      /** Render the row-config seat in one view, mounted so hooks run. */
+      renderConfig(view) {
+        const seat = configSeats.length === 0 ? undefined : configSeats[0]
+        if (!seat) return null
+        const form = services.configForms.get(settingsNamespaces()[0])
+        const node = document.createElement('div')
+        const inst = mount(seat.component, { view, form }, node)
+        disposed.push(inst)
+        return node
+      },
       setActive(id) { activePanelId = id },
       dispose() {
+        for (let index = disposed.length - 1; index >= 0; index -= 1) {
+          try { unmount(disposed[index]) } catch (error) { console.warn(error) }
+        }
+        disposed.length = 0
         for (let index = disposers.length - 1; index >= 0; index -= 1) {
           try { disposers[index]() } catch (error) { console.warn(error) }
         }
@@ -757,6 +873,29 @@ const harness = String.raw`
       if (location.search.indexOf('sweepdialog') >= 0) {
         // The confirm sheet is what a screenshot of this feature has to show.
         click(rt0.sweepButton())
+      }
+      // ?undo sweeps for real so the undo bar is on screen when the shot lands.
+      if (location.search.indexOf('undo') >= 0) {
+        const button = rt0.sweepButton()
+        if (button) {
+          click(button)
+          setTimeout(() => {
+            const confirm = rt0.dialogConfirm()
+            if (confirm) click(confirm)
+          }, 0)
+        }
+      }
+      // ?config shows the settings card the plugin manager mounts for this row.
+      if (location.search.indexOf('config') >= 0) {
+        // The card lives inside the plugin manager, so show it alone.
+        const card = rt0.renderConfig('page')
+        const stage = document.getElementById('stage')
+        if (card) {
+          if (stage) stage.style.display = 'none'
+          card.style.padding = '22px'
+          card.style.maxWidth = '460px'
+          document.body.appendChild(card)
+        }
       }
       document.title = 'preview'
       // ?freeze=1.2 pauses every animation 1.2s in, so screenshots can capture
@@ -1594,6 +1733,129 @@ const harness = String.raw`
     await tick(5)
     check('归档接口缺失时直接说明', rt.noticeText() === '当前界面不支持归档会话。', rt.noticeText())
     check('归档接口缺失时不弹确认框', rt.dialogText() === '', rt.dialogText())
+    rt.unmount()
+
+    // 21e. the undo bar: archiving leaves a way back for thirty seconds
+    localStorage.clear()
+    rt = makeRuntime({ oldSessions: 5 })
+    await tick(5)
+    check('没有归档动作时不出撤销条', rt.undoBar() === null, rt.undoText())
+    click(rt.sweepButton())
+    await tick(5)
+    click(rt.dialogConfirm())
+    await tick(10)
+    check('归档后出现撤销条', rt.undoBar() !== null, rt.undoText())
+    check('撤销条说清刚归档几条', rt.undoText().indexOf('刚归档 5 个会话') >= 0, rt.undoText())
+    check('撤销按钮带倒计时', (rt.undoAction() || {}).textContent.indexOf('撤销') >= 0
+      && /\d+s/.test(rt.undoAction().textContent), rt.undoAction() ? rt.undoAction().textContent : '')
+    const undoAt = Array.from(rt.container.querySelectorAll('.drt-page > *')).map(el => el.className)
+    check('撤销条排在提示与列表之间',
+      undoAt.indexOf('drt-notice is-success') >= 0
+      && undoAt.indexOf('drt-undo') === undoAt.indexOf('drt-notice is-success') + 1
+      && undoAt.indexOf('drt-body') === undoAt.indexOf('drt-undo') + 1,
+      undoAt.join('|'))
+    click(rt.undoAction())
+    await tick(15)
+    check('撤销把会话还回去了', rt.archivedIds().length === 0, rt.archivedIds().join('|'))
+    check('撤销后说清恢复了几条', rt.noticeText() === '已恢复 5 个会话。', rt.noticeText())
+    check('撤销后条子收起', rt.undoBar() === null, rt.undoText())
+    check('撤销调用走的是界面恢复接口',
+      rt.calls.filter(call => call[0] === 'uiWorkspace.unarchiveSession').length === 5,
+      String(rt.calls.filter(call => call[0] === 'uiWorkspace.unarchiveSession').length))
+    rt.unmount()
+
+    // 21f. a build that can archive but not restore must not offer undo
+    localStorage.clear()
+    rt = makeRuntime({ oldSessions: 3, noUnarchive: true })
+    await tick(5)
+    click(rt.sweepButton())
+    await tick(5)
+    click(rt.dialogConfirm())
+    await tick(10)
+    check('不能恢复时不出撤销条', rt.undoBar() === null, rt.undoText())
+    check('不能恢复时归档照常进行', rt.archivedIds().length === 3, rt.archivedIds().join('|'))
+    rt.unmount()
+
+    // 21g. partial failure still leaves undo for what did land
+    localStorage.clear()
+    rt = makeRuntime({ oldSessions: 3, archiveFails: ['o02'] })
+    await tick(5)
+    click(rt.sweepButton())
+    await tick(5)
+    click(rt.dialogConfirm())
+    await tick(15)
+    check('部分失败也给出撤销条', rt.undoBar() !== null, rt.undoText())
+    check('撤销条只算真正归档的那几条', rt.undoText().indexOf('刚归档 2 个会话') >= 0, rt.undoText())
+    rt.unmount()
+
+    // 22. the keep window is read from settings, not baked into the page
+    localStorage.clear()
+    rt = makeRuntime({ oldSessions: 6, keepDays: 30 })
+    await tick(5)
+    check('页头按钮跟着设置走', rt.sweepText() === '只留 30 天', rt.sweepText())
+    click(rt.sweepButton())
+    await tick(5)
+    check('没有超出窗口的会话时不弹框', rt.dialogText() === '', rt.dialogText())
+    check('并说清已经没有更早的', rt.noticeText() === '30 天以前的会话已经没有了。', rt.noticeText())
+    rt.unmount()
+
+    // 22a. a smaller window sweeps the ten-day rows the default window keeps
+    localStorage.clear()
+    rt = makeRuntime({ pageOld: 2, keepDays: 3 })
+    await tick(5)
+    check('窗口调小后页头跟着变', rt.sweepText() === '只留 3 天', rt.sweepText())
+    click(rt.sweepButton())
+    await tick(5)
+    check('窗口调小后能清掉十天内的旧会话', rt.dialogText().indexOf('2 个会话') >= 0, rt.dialogText())
+    click(rt.dialogConfirm())
+    await tick(10)
+    check('确实归档了那两条', rt.archivedIds().sort().join('|') === 'm01|m02', rt.archivedIds().join('|'))
+    rt.unmount()
+
+    // 22b. no settings surface at all: the page still works on the default
+    localStorage.clear()
+    rt = makeRuntime({ oldSessions: 3, noSettings: true })
+    await tick(5)
+    check('没有设置入口时按默认七天', rt.sweepText() === '只留 7 天', rt.sweepText())
+    click(rt.sweepButton())
+    await tick(5)
+    check('没有设置入口也能正常归档', rt.dialogText().indexOf('3 个会话') >= 0, rt.dialogText())
+    rt.unmount()
+
+    // 23. the settings card the plugin manager mounts for this row
+    localStorage.clear()
+    rt = makeRuntime({})
+    await tick(5)
+    check('向插件管理器登记了配置位', rt.configKeys().length >= 1, rt.configKeys().join('|'))
+    check('配置位按包名加行 id 取名',
+      rt.configKeys().every(key => key.indexOf('@dsh-local/view-8c716ee6-17d5-46ae-b021-c82f36d0f6c1#') === 0),
+      rt.configKeys().join('|'))
+    const summary = rt.renderConfig('summary')
+    check('描述位给出当前天数', summary !== null && summary.textContent === '只留最近 7 天',
+      summary ? summary.textContent : 'null')
+    const card = rt.renderConfig('page')
+    check('设置卡有天数输入框', card !== null && card.querySelector('#drt-keep-days') !== null,
+      card ? card.textContent : 'null')
+    check('设置卡写明单位', card !== null && card.textContent.indexOf('天') >= 0, card ? card.textContent : 'null')
+    const input = card ? card.querySelector('#drt-keep-days') : null
+    if (input) {
+      input.value = '21'
+      // The harness shim maps onChange onto the DOM 'change' event; real React
+      // listens for 'input'. Fire both so either binding sees the edit.
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    await tick(5)
+    const saveButton = card ? Array.from(card.querySelectorAll('button')).filter(el => el.textContent === '保存')[0] : null
+    check('改过之后保存按钮可点', saveButton !== undefined && saveButton !== null && !saveButton.disabled,
+      saveButton ? String(saveButton.disabled) : 'null')
+    if (saveButton) click(saveButton)
+    await tick(10)
+    const wrote = rt.calls.filter(call => call[0] === 'configForms.set')
+    check('保存写的是 keepDays 字段', wrote.length === 1 && wrote[0][2] === 'keepDays' && wrote[0][3] === 21,
+      JSON.stringify(wrote))
+    check('保存后提示已生效', card !== null && card.textContent.indexOf('已保存，页面按 21 天工作。') >= 0,
+      card ? card.textContent : 'null')
     rt.unmount()
 
     const failed = results.filter(line => line.indexOf('FAIL') === 0).length
