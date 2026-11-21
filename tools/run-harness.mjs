@@ -9,7 +9,10 @@ const shot = process.argv[3] || ''
 const width = Number(process.argv[4] || 1100)
 const height = Number(process.argv[5] || 860)
 const profileDir = mkdtempSync(join(tmpdir(), 'rt-chrome-'))
-const args = ['--headless=new', '--disable-gpu', '--hide-scrollbars',
+// --no-sandbox: this machine's sandbox profile refuses Chrome's helper
+// sandbox ("aperitif: Failed to initialize sandbox", exit 133), so the
+// renderer never starts. The harness only loads a local file.
+const args = ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',
   '--user-data-dir=' + profileDir, '--window-size=' + width + ',' + height,
   '--virtual-time-budget=15000', '--run-all-compositor-stages-before-draw']
 if (shot) args.push('--screenshot=' + shot)

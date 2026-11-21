@@ -32,6 +32,20 @@ const FALLBACK_TOKENS = `:root{
 const themeFile = process.env.RT_THEME || '/private/tmp/dsh-theme.css'
 const theme = fs.existsSync(themeFile) ? fs.readFileSync(themeFile, 'utf8') : FALLBACK_TOKENS
 
+// The shell's own panel-row rules, copied from its stylesheet. The entry's
+// counts are laid out in this row's flex line, so the fixtures have to carry
+// the real geometry (32px row, 6px gaps, 38px kept for the unpin button) or a
+// measurement here would describe a row that does not exist in the app.
+const shellRow = `
+.panelEntry{position:relative;display:flex;border-inline:3px solid transparent;border-radius:8px;background-clip:padding-box}
+.panelEntryWide > *:first-child{flex:1;min-width:0}
+.panelEntryWide .panelRow{width:100%;margin:0;border-inline:0;padding-right:38px;background:transparent}
+.panelRow{display:flex;align-items:center;gap:6px;min-height:32px;margin:0;padding:5px 12px;border:0;background:none;color:inherit;font:inherit;font-size:13px;line-height:22px;text-align:left;cursor:pointer}
+.panelGlyph{flex:none;display:inline-flex;align-items:center;justify-content:center}
+.panelTitle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.panelEntryOwn > .panelRow{padding-right:38px}
+`
+
 const seedMatch = /const OTHER_SPEAKER_IDS = new Set\('([^']+)'/.exec(plugin)
 const otherId = seedMatch ? seedMatch[1].split(',')[0] : ''
 
@@ -308,6 +322,15 @@ const harness = String.raw`
     for (const id of ids) {
       statusById.set(id, { running: sessionsById[id].running, pendingInteraction: undefined, completionUnread: false })
     }
+    // opts.pending seeds blocked Sessions before the first render, which is how
+    // a visit that lands on someone already waiting is staged.
+    for (const id of Object.keys(opts.pending || {})) {
+      const kind = opts.pending[id]
+      statusById.set(id, {
+        ...(statusById.get(id) || { running: false, completionUnread: false }),
+        pendingInteraction: { key: 'k-' + kind, kind, sessionId: id },
+      })
+    }
     const statusListeners = []
     function publishStatus() {
       for (const listener of statusListeners.slice()) listener()
@@ -337,8 +360,12 @@ const harness = String.raw`
     const disposers = []
     // Registrations onto the plugin manager's per-row configuration seat.
     const configSeats = []
+    // Registrations onto the sidebar's panel list: the seat that draws the entry.
+    const panelSeats = []
     // Extra mounts made by the tests (row-config views), torn down with the page.
     const disposed = []
+    // The sidebar entry, mounted on demand: the shell owns that row, not the page.
+    let entryMount = null
 
     // Settings: a mirror of what namespaces exist, plus one controller per row.
     const keepDaysState = { days: opts.keepDays === undefined ? 7 : opts.keepDays, revision: 1 }
@@ -455,6 +482,7 @@ const harness = String.raw`
         // an in-place mutation would never reach a subscriber.
         archiveSession: async (id, options) => {
           calls.push(['workspaces.archiveSession', id, options])
+          if (opts.archiveDelay) await new Promise(resolve => setTimeout(resolve, opts.archiveDelay))
           if (opts.archiveFails && opts.archiveFails.indexOf(id) >= 0) {
             const error = new Error('这个会话还在运行')
             error.name = 'WorkspaceArchiveError'
@@ -596,6 +624,9 @@ const harness = String.raw`
           if (definition.name === 'plugins.row.config') {
             configSeats.push({ key: definition.key, definition, component })
           }
+          if (definition.name === 'sidebar.panellist') {
+            panelSeats.push({ key: definition.id, definition, component })
+          }
           return () => {}
         },
       },
@@ -717,6 +748,13 @@ const harness = String.raw`
       undoBar() { return container.querySelector('.drt-undo') },
       undoText() { const el = container.querySelector('.drt-undo'); return el ? el.textContent : '' },
       undoAction() { return container.querySelector('.drt-undo .drt-undoAction') },
+      /** Every per-card 归档 mark on screen, in card order. */
+      archiveMarks() { return Array.from(container.querySelectorAll('.drt-archive')) },
+      /** The 归档 mark of the n-th 已完成 card, or null. */
+      archiveMarkAt(index) {
+        const cards = Array.from(container.querySelectorAll('.drt-card.is-done'))
+        return cards[index] ? cards[index].querySelector('.drt-archive') : null
+      },
       /** The header's sweep button, or null when the header lacks it. */
       sweepButton() { return container.querySelector('.drt-sweep') },
       sweepText() { const el = container.querySelector('.drt-sweep'); return el ? el.textContent : '' },
@@ -754,6 +792,73 @@ const harness = String.raw`
         disposed.push(inst)
         return node
       },
+      /**
+       * Mount the sidebar entry seat the way the shell does: one span inside a
+       * button, then the row's own label beside it, so the glyph paints — and
+       * the pills land — as they would in the panel row.
+       */
+      renderEntry(props) {
+        const seat = panelSeats.length === 0 ? undefined : panelSeats[0]
+        if (!seat) return null
+        const node = document.createElement('div')
+        const button = document.createElement('button')
+        // The shell's row is a flex line of glyph span + label span; both are
+        // rebuilt here so a check can measure where the pills actually land.
+        // They carry the shell's classes rather than inline styles: the plugin
+        // re-flows this row through display:contents, and an inline style on
+        // the glyph would out-rank that rule and read as a broken layout.
+        button.className = 'panelRow'
+        const icon = document.createElement('span')
+        icon.className = 'panelGlyph'
+        button.appendChild(icon)
+        const title = document.createElement('span')
+        title.className = 'panelTitle'
+        title.textContent = '最近任务'
+        button.appendChild(title)
+        node.appendChild(button)
+        const mounted = mount(seat.component, Object.assign({ id: seat.key, size: 16, active: false }, props), icon)
+        entryMount = { node, inst: mounted }
+        disposed.push(mounted)
+        document.getElementById('stage').appendChild(node)
+        return node
+      },
+      /** Texts of the entry's pills, in draw order (pending, running, unread). */
+      entryBadges() {
+        if (!entryMount) return []
+        return Array.from(entryMount.node.querySelectorAll('.drt-entryBadge')).map(el => el.textContent)
+      },
+      /** Classes of the entry's pills, so a check can tell which band each is. */
+      entryBadgeClasses() {
+        if (!entryMount) return []
+        return Array.from(entryMount.node.querySelectorAll('.drt-entryBadge')).map(el => el.className)
+      },
+      /** The tooltip a pill carries, read the way a hover would show it. */
+      entryBadgeTitles() {
+        if (!entryMount) return []
+        return Array.from(entryMount.node.querySelectorAll('.drt-entryBadge')).map(el => el.title)
+      },
+      /**
+       * The row's geometry, read the way the eye sees it: where the label ends
+       * and where the pills begin. The pills are ordered after the label, so
+       * these two edges tell whether the counts really sit to its right.
+       */
+      entryBoxes() {
+        if (!entryMount) return null
+        const label = entryMount.node.querySelector('.panelTitle')
+        const badges = entryMount.node.querySelector('.drt-entryBadges')
+        const button = entryMount.node.querySelector('button')
+        if (label === null || badges === null || button === null) return null
+        const labelBox = label.getBoundingClientRect()
+        const badgesBox = badges.getBoundingClientRect()
+        const buttonBox = button.getBoundingClientRect()
+        return {
+          labelWidth: labelBox.width,
+          labelRight: labelBox.right,
+          badgesLeft: badgesBox.left,
+          badgesRight: badgesBox.right,
+          buttonRight: buttonBox.right,
+        }
+      },
       setActive(id) { activePanelId = id },
       dispose() {
         for (let index = disposed.length - 1; index >= 0; index -= 1) {
@@ -779,6 +884,39 @@ const harness = String.raw`
   function clickAndReport(el) {
     if (!el) throw new Error('missing element to click')
     return el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  }
+
+  /*
+   * The bands open folded, so a check that wants cards has to unfold the band
+   * first. Band names match the section suffix: '' is 正在运行, then 'Fav',
+   * 'Unread', 'Done'. 未读 has no heading button — it is never folded.
+   */
+  function bandHeadButton(rt, band) {
+    const section = rt.container.querySelector('.drt-section' + (band === '' ? 'Running' : band))
+    return section ? section.querySelector('.drt-sectionHeadButton') : null
+  }
+
+  function bandIsOpen(rt, band) {
+    const button = bandHeadButton(rt, band)
+    return !!button && button.getAttribute('aria-expanded') === 'true'
+  }
+
+  function openBand(rt, band) {
+    const button = bandHeadButton(rt, band)
+    if (button && button.getAttribute('aria-expanded') !== 'true') click(button)
+    return !!button
+  }
+
+  function closedBandCount(rt) {
+    return Array.from(rt.container.querySelectorAll('.drt-section')).filter(section => section.className.indexOf('is-folded') >= 0).length
+  }
+
+  /* 未读 never folds, so "everything is closed" means every band that has a
+     heading button. The number of bands on screen varies with the data. */
+  function allBandsClosed(rt) {
+    const sections = Array.from(rt.container.querySelectorAll('.drt-section'))
+    const foldable = sections.filter(section => section.querySelector('.drt-sectionHeadButton'))
+    return foldable.length > 0 && foldable.every(section => section.className.indexOf('is-folded') >= 0)
   }
 
   /** A fake sidebar row of this plugin plus the app's refresh button. */
@@ -851,14 +989,15 @@ const harness = String.raw`
       if (location.search.indexOf('dark') >= 0) document.body.setAttribute('data-ds-dark-theme', '')
       const many = location.search.indexOf('many') >= 0 ? ['s01','s02','s03','s04','s05','s06','s07','s08','s09','s10'] : undefined
       const old = location.search.indexOf('old') >= 0 ? { oldSessions: 5 } : {}
+      // ?pending is seeded before the first render, not set afterwards: this
+      // page decides its shape from the rows it arrives on, so a wait planted
+      // after the mount would only write the red chip on a closed heading.
+      const waiting = location.search.indexOf('pending') >= 0
+        ? { s01: 'approval', s02: 'plan-review', s03: 'question' }
+        : undefined
       const rt0 = makeRuntime(location.search.indexOf('none') >= 0
-        ? { running: [], ...old }
-        : many ? { running: many, ...old } : old)
-      if (location.search.indexOf('pending') >= 0) {
-        rt0.setPending('s01', 'approval')
-        rt0.setPending('s02', 'plan-review')
-        rt0.setPending('s03', 'question')
-      }
+        ? { running: [], ...old, pending: waiting }
+        : many ? { running: many, ...old, pending: waiting } : { ...old, pending: waiting })
       if (location.search.indexOf('unread') >= 0) {
         rt0.finishRun('s02')
         rt0.finishRun('s04')
@@ -885,6 +1024,22 @@ const harness = String.raw`
           }, 0)
         }
       }
+      // ?foldall folds every band that arrived open, so a shot can still show
+      // the all-headings shape now that 已完成 comes unfolded.
+      if (location.search.indexOf('foldall') >= 0) {
+        for (const band of ['', 'Fav', 'Done']) {
+          const button = bandHeadButton(rt0, band)
+          if (button && button.getAttribute('aria-expanded') === 'true') click(button)
+        }
+        await tick()
+      }
+      // ?archone archives the first 已完成 card, leaving the single-row undo bar
+      // on screen — the shape a per-card 归档 leaves behind.
+      if (location.search.indexOf('archone') >= 0) {
+        const mark = rt0.archiveMarkAt(0)
+        if (mark) click(mark)
+        await tick(20)
+      }
       // ?config shows the settings card the plugin manager mounts for this row.
       if (location.search.indexOf('config') >= 0) {
         // The card lives inside the plugin manager, so show it alone.
@@ -895,6 +1050,78 @@ const harness = String.raw`
           card.style.padding = '22px'
           card.style.maxWidth = '460px'
           document.body.appendChild(card)
+        }
+      }
+      // ?waitlater plants a wait after the page is already on screen: the
+      // heading keeps its cards folded and only gains the red chip, which is
+      // the other half of the arrival rule.
+      if (location.search.indexOf('waitlater') >= 0) {
+        await tick()
+        rt0.setPending('s02', 'approval')
+        await tick()
+      }
+      // ?expand unfolds the three bands that open folded, so a screenshot can
+      // show the cards instead of the arrival state.
+      if (location.search.indexOf('expand') >= 0) {
+        for (const band of ['', 'Fav', 'Done']) {
+          const button = bandHeadButton(rt0, band)
+          if (button && button.getAttribute('aria-expanded') !== 'true') click(button)
+        }
+      }
+      // ?entry draws the sidebar entry inside a stand-in panel list, copying the
+      // framework's own row CSS so the pills can be judged in place (alignment
+      // with neighbouring rows, distance to the label, room for the unpin button).
+      // It goes last so any ?pending / ?unread above it is already in place.
+      if (location.search.indexOf('entry') >= 0) {
+        const node = rt0.renderEntry()
+        const stage = document.getElementById('stage')
+        if (node && stage) {
+          stage.style.display = 'none'
+          // The framework's own row geometry, so what is measured here is what
+          // the sidebar measures: 32px rows, 12px inline padding, 38px kept at
+          // the right for the unpin button, 6px between icon and name.
+          const list = document.createElement('div')
+          list.style.cssText = 'width:238px;margin:24px;padding:18px 10px 6px;box-sizing:border-box;border-radius:10px;background:var(--dsw-specific-sidebar-fill,#f9fafb);border:1px solid var(--dsw-alias-border-l1,#e5e7eb);color:var(--dsw-alias-label-primary,#111);font-family:var(--dsw-font-family,system-ui)'
+          const ROWS = [['对话', '最近对话'], ['工作区', '工作区'], ['插件', '插件']]
+          const makeRow = (labelText, glyph) => {
+            const entry = document.createElement('div')
+            entry.className = 'panelEntry'
+            entry.style.cssText = 'position:relative;display:flex;border-radius:6px;background-clip:padding-box'
+            const button = document.createElement('button')
+            button.style.cssText = 'background:none;border:0;width:100%;min-height:32px;margin:0;padding:5px 38px 5px 12px;display:flex;align-items:center;gap:6px;color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer'
+            // The live glyph is already the shell's glyph span; wrapping it in a
+            // second one would put an inline-flex box around the pills and pull
+            // them back beside the icon.
+            const alreadyGlyph = glyph && glyph.classList && glyph.classList.contains('panelGlyph')
+            const glyphSpan = alreadyGlyph ? glyph : document.createElement('span')
+            // The glyph and the name carry the shell's classes, not inline
+            // styles: a plugin rule has to out-rank them exactly as it does in
+            // the real row, and only an inline style would beat it here.
+            glyphSpan.className = 'panelGlyph'
+            if (glyph && !alreadyGlyph) glyphSpan.appendChild(glyph)
+            else if (!glyph) {
+              const square = document.createElement('span')
+              square.style.cssText = 'width:16px;height:16px;border-radius:4px;border:1.3px solid currentColor;opacity:.55;display:inline-block'
+              glyphSpan.appendChild(square)
+            }
+            const title = document.createElement('span')
+            title.className = 'panelTitle'
+            title.textContent = labelText
+            button.appendChild(glyphSpan)
+            button.appendChild(title)
+            entry.appendChild(button)
+            return entry
+          }
+          for (const row of ROWS) list.appendChild(makeRow(row[1]))
+          // The glyph's own span is moved, not copied: it is the live mount
+          // point, so the counts keep repainting inside the row. It keeps its
+          // class rather than an inline style — the plugin re-flows this row
+          // through display:contents, and an inline display would win.
+          const live = node.querySelector('.panelGlyph') || node
+          const own = makeRow('最近任务', live)
+          own.className = 'panelEntry panelEntryOwn'
+          list.appendChild(own)
+          document.body.appendChild(list)
         }
       }
       document.title = 'preview'
@@ -912,20 +1139,38 @@ const harness = String.raw`
       }
       return
     }
-    // 1. two zones: 2 running cards + 15 completed rows
+    // 1. the page opens with 已完成 unfolded and the rest folded
     localStorage.clear()
     let rt = makeRuntime()
-    check('启动时运行区列出 2 个', rt.lives() === 2, '实际 ' + rt.lives())
-    check('运行卡标题正确', rt.liveTitles().join('|') === '对话 1|对话 7', rt.liveTitles().join('|'))
-    check('运行区计数为 2', rt.zoneCount('') === '2', rt.counts().join('|'))
-    check('已完成区计数为 38', rt.zoneCount('Done') === '38', rt.counts().join('|'))
+    check('启动时运行区收起', !!bandHeadButton(rt, '') && !bandIsOpen(rt, ''), String(bandIsOpen(rt, '')))
+    check('启动时已完成区展开', !!bandHeadButton(rt, 'Done') && bandIsOpen(rt, 'Done'), String(bandIsOpen(rt, 'Done')))
+    check('启动时运行区一张卡也不画', rt.lives() === 0, String(rt.lives()))
+    check('启动时已完成区直接画出 15 条', rt.rows() === 15, '实际 ' + rt.rows())
+    check('收起时仍然写着各区条数', rt.zoneCount('') === '2' && rt.zoneCount('Done') === '38', rt.counts().join('|'))
+    check('两个可折叠区各带一个小三角', rt.container.querySelectorAll('.drt-chevron').length === 2,
+      String(rt.container.querySelectorAll('.drt-chevron').length))
+    check('启动时底部直接能展开其余', rt.footText() === '展开其余 23 个对话', rt.footText())
     check('启动时没有未读区',
       rt.unreads() === 0 && rt.zoneCount('Unread') === '' && !rt.container.querySelector('.drt-sectionUnread'),
       rt.counts().join('|'))
-    check('已完成区启动显示 15 条', rt.rows() === 15, '实际 ' + rt.rows())
+
+    openBand(rt, '')
+    await tick()
+    check('点开标题后运行区列出 2 个', rt.lives() === 2, '实际 ' + rt.lives())
+    check('运行卡标题正确', rt.liveTitles().join('|') === '对话 1|对话 7', rt.liveTitles().join('|'))
+    check('点开后三角转为朝下', bandHeadButton(rt, 'Done').className.indexOf('is-open') >= 0,
+      bandHeadButton(rt, 'Done').className)
+    check('已完成区点开后显示 15 条', rt.rows() === 15, '实际 ' + rt.rows())
     check('已完成区不含运行中的对话', rt.rowTitles().indexOf('对话 1') < 0 && rt.rowTitles().indexOf('对话 7') < 0, rt.rowTitles().join('|'))
     check('底部按钮写明剩余 23', rt.footText() === '展开其余 23 个对话', rt.footText())
     check('展开数不写本地存储', localStorage.getItem('dsh.recent-tasks.shown.v1') === null, String(localStorage.getItem('dsh.recent-tasks.shown.v1')))
+
+    click(bandHeadButton(rt, 'Done'))
+    await tick()
+    check('再点一下同一区就收回', rt.rows() === 0 && rt.zoneCount('Done') === '38' && !bandIsOpen(rt, 'Done'),
+      rt.rows() + ' / ' + rt.zoneCount('Done'))
+    openBand(rt, 'Done')
+    await tick()
 
     // 2. clicking a running card opens that session and leaves the page
     click(rt.container.querySelector('.drt-card.is-running'))
@@ -938,6 +1183,9 @@ const harness = String.raw`
     localStorage.clear()
     rt = makeRuntime()
     rt.finishRun('s01')
+    await tick()
+    openBand(rt, '')
+    openBand(rt, 'Done')
     await tick()
     check('跑完后运行区剩 1 个', rt.lives() === 1, '实际 ' + rt.lives())
     check('跑完的对话进入未读区', rt.unreads() === 1 && rt.unreadTitles()[0] === '对话 1', rt.unreadTitles().join('|'))
@@ -1047,6 +1295,10 @@ const harness = String.raw`
     click(rt.container.querySelector('.drt-card.is-unread .drt-star'))
     await tick()
     check('点星星不打开会话', rt.calls.filter(call => call[0] === 'uiWorkspace.openSession').length === beforeStars, JSON.stringify(rt.calls))
+    check('刚收藏的区还是收着', !bandIsOpen(rt, 'Fav') && rt.zoneCount('Fav') === '1',
+      String(bandIsOpen(rt, 'Fav')) + ' / ' + rt.zoneCount('Fav'))
+    openBand(rt, 'Fav')
+    await tick()
     check('收藏区出现该会话', rt.favorites() === 1 && rt.favoriteTitles()[0] === '对话 1', rt.favoriteTitles().join('|'))
     const favUnreadChip = rt.container.querySelector('.drt-card.is-fav .drt-status')
     check('收藏里未读的卡片写明未读', !!favUnreadChip && favUnreadChip.textContent === '未读',
@@ -1065,6 +1317,10 @@ const harness = String.raw`
     check('收藏写入本地存储', (localStorage.getItem('dsh.recent-tasks.favorites.v1') || '').indexOf('s01') >= 0,
       localStorage.getItem('dsh.recent-tasks.favorites.v1'))
     rt.inst = rt.remount()
+    check('重挂载后收藏区又收起来了', rt.favorites() === 0 && !bandIsOpen(rt, 'Fav')
+      && bandIsOpen(rt, 'Done'), String(bandIsOpen(rt, 'Fav')) + ' / ' + String(bandIsOpen(rt, 'Done')))
+    openBand(rt, 'Fav')
+    await tick()
     check('重挂载后收藏仍在', rt.favorites() === 1 && rt.favoriteTitles()[0] === '对话 1', rt.favoriteTitles().join('|'))
     check('重挂载后原区域仍不重复', rt.unreads() === 0 && rt.titleCount('对话 1') === 1, rt.titleCount('对话 1') + ' / 未读 ' + rt.unreads())
     click(rt.container.querySelector('.drt-card.is-fav .drt-star'))
@@ -1079,6 +1335,8 @@ const harness = String.raw`
     await tick()
     check('点未读行打开该会话', rt.calls.some(call => call[0] === 'uiWorkspace.openSession' && call[1] === 's01'), JSON.stringify(rt.calls))
     check('点后未读区消失', rt.unreads() === 0 && rt.zoneCount('Unread') === '', rt.counts().join('|'))
+    openBand(rt, 'Done')
+    await tick()
     check('点后回到已完成区第一名', rt.rowTitles()[0] === '对话 1', rt.rowTitles().join('|'))
     check('点后本地存储清掉该会话', (localStorage.getItem('dsh.recent-tasks.unread.v1') || '').indexOf('s01') < 0,
       localStorage.getItem('dsh.recent-tasks.unread.v1'))
@@ -1090,9 +1348,13 @@ const harness = String.raw`
     rt.finishRun('s01')
     await tick()
     check('没有收藏时收藏区不占位', !rt.container.querySelector('.drt-sectionFav'), rt.zoneLabels().join('|'))
+    openBand(rt, 'Done')
+    await tick()
     click(rt.container.querySelector('.drt-card.is-done .drt-star'))
     await tick()
     check('收藏一条后回归四区顺序', rt.zoneLabels().join('|') === '正在运行|收藏|未读|已完成', rt.zoneLabels().join('|'))
+    openBand(rt, 'Fav')
+    await tick()
     click(rt.container.querySelector('.drt-card.is-fav .drt-star'))
     await tick()
     check('取消最后一条收藏后收藏区消失', !rt.container.querySelector('.drt-sectionFav') && rt.zoneLabels().join('|') === '正在运行|未读|已完成',
@@ -1102,8 +1364,12 @@ const harness = String.raw`
     // 3b2. a starred running session leaves 正在运行, and the band says where it went
     localStorage.clear()
     rt = makeRuntime()
+    openBand(rt, '')
+    await tick()
     check('收藏前运行区 2 个', rt.lives() === 2, String(rt.lives()))
     click(rt.container.querySelector('.drt-card.is-running .drt-star'))
+    await tick()
+    openBand(rt, 'Fav')
     await tick()
     check('收藏运行中的会话：运行区少一个', rt.lives() === 1 && rt.favorites() === 1 && rt.favoriteTitles()[0] === '对话 1',
       '运行 ' + rt.lives() + ' / 收藏 ' + rt.favoriteTitles().join('|'))
@@ -1127,8 +1393,12 @@ const harness = String.raw`
     // 3b3. a starred completed session leaves 已完成; unstarring puts it back
     localStorage.clear()
     rt = makeRuntime()
+    openBand(rt, 'Done')
+    await tick()
     check('已完成区第一行是对话 2', rt.rowTitles()[0] === '对话 2', rt.rowTitles()[0])
     click(rt.container.querySelector('.drt-card.is-done .drt-star'))
+    await tick()
+    openBand(rt, 'Fav')
     await tick()
     check('收藏已完成的会话：已完成少一条', rt.zoneCount('Done') === '37' && rt.favorites() === 1 && rt.favoriteTitles()[0] === '对话 2',
       rt.counts().join('|') + ' / ' + rt.favoriteTitles().join('|'))
@@ -1141,14 +1411,21 @@ const harness = String.raw`
     check('已完成的会话四区只出现一次', rt.titleCount('对话 2') === 1, String(rt.titleCount('对话 2')))
     click(rt.container.querySelector('.drt-card.is-fav .drt-star'))
     await tick()
-    check('取消收藏后回到已完成区', rt.zoneCount('Done') === '38' && rt.rowTitles()[0] === '对话 2' && rt.favorites() === 0,
+    check('取消收藏后回到已完成区', rt.zoneCount('Done') === '38' && rt.favorites() === 0,
       rt.counts().join('|') + ' / ' + rt.rowTitles().slice(0, 2).join('|'))
+    openBand(rt, 'Done')
+    await tick()
+    check('取消收藏后已完成区第一行又是对话 2', rt.rowTitles()[0] === '对话 2', rt.rowTitles().slice(0, 2).join('|'))
     rt.unmount()
 
     // 3b4. a starred running Session still shows it is running
     localStorage.clear()
     rt = makeRuntime()
+    openBand(rt, '')
+    await tick()
     click(rt.container.querySelector('.drt-card.is-running .drt-star'))
+    await tick()
+    openBand(rt, 'Fav')
     await tick()
     const favDot = rt.container.querySelector('.drt-card.is-fav .drt-cardDot')
     check('收藏里运行中的卡片点仍是蓝的', !!favDot && favDot.className.indexOf('is-running') >= 0, favDot ? favDot.className : 'missing')
@@ -1168,7 +1445,11 @@ const harness = String.raw`
     rt = makeRuntime()
     rt.setPending('s05', 'approval')
     await tick()
+    openBand(rt, '')
+    await tick()
     click(rt.container.querySelector('.drt-card.is-running.is-pending .drt-star'))
+    await tick()
+    openBand(rt, 'Fav')
     await tick()
     const favWaitDot = rt.container.querySelector('.drt-card.is-fav .drt-cardDot')
     const favWaitPill = rt.container.querySelector('.drt-card.is-fav .drt-pill')
@@ -1198,6 +1479,8 @@ const harness = String.raw`
     await tick()
     check('再跑完一条进入未读', rt.unreads() === 1 && rt.unreadTitles()[0] === '对话 3', rt.unreadTitles().join('|'))
     rt.startRun('s03')
+    await tick()
+    openBand(rt, '')
     await tick()
     check('重新运行后离开未读区', rt.unreads() === 0 && rt.liveTitles().indexOf('对话 3') >= 0, rt.liveTitles().join('|'))
     rt.unmount()
@@ -1245,6 +1528,8 @@ const harness = String.raw`
     rt.finishRunHidden('s01')
     await tick(120)
     check('盯着对话跑完不算未读', rt.unreads() === 0, String(rt.unreads()))
+    openBand(rt, 'Done')
+    await tick()
     check('盯着跑完的会话落回已完成', rt.rowTitles()[0] === '对话 1', rt.rowTitles().join('|'))
     rt.unmount()
 
@@ -1259,6 +1544,8 @@ const harness = String.raw`
         && getComputedStyle(rt.container.querySelector('.drt-sectionDone')).paddingTop === '0px',
       getComputedStyle(rt.container.querySelector('.drt-sectionDone')).borderTopWidth)
     check('没有运行中时已完成计数 40', rt.zoneCount('Done') === '40', rt.counts().join('|'))
+    openBand(rt, 'Done')
+    await tick()
     check('没有运行中时仍显示 15 条', rt.rows() === 15, '实际 ' + rt.rows())
 
     // 4a. no running, one unread: 未读 takes the top and drops its divider
@@ -1280,7 +1567,8 @@ const harness = String.raw`
     if (${JSON.stringify(otherId)} !== '') allRunningIds.push(${JSON.stringify(otherId)})
     rt = makeRuntime({ running: allRunningIds })
     check('全部在运行时只剩运行区',
-      rt.zoneLabels().join('|') === '正在运行' && rt.lives() > 0, rt.zoneLabels().join('|'))
+      rt.zoneLabels().join('|') === '正在运行' && !!bandHeadButton(rt, '') && !bandIsOpen(rt, ''),
+      rt.zoneLabels().join('|'))
     check('没有已完成区时底部收起按钮也不占位',
       !rt.container.querySelector('.drt-sectionDone') && rt.container.querySelector('.drt-more') === null,
       rt.footText())
@@ -1289,6 +1577,9 @@ const harness = String.raw`
     // 5. expand step by step over the completed list
     localStorage.clear()
     rt = makeRuntime()
+    openBand(rt, 'Done')
+    await tick()
+    check('收起的区没有底部按钮，点开才有', !!rt.container.querySelector('.drt-more'), rt.footText())
     click(rt.container.querySelector('.drt-more'))
     await tick()
     check('点一次显示 25 条', rt.rows() === 25, '实际 ' + rt.rows())
@@ -1303,9 +1594,13 @@ const harness = String.raw`
     check('点三次显示全部 38 条', rt.rows() === 38, '实际 ' + rt.rows())
     check('全部展开后按钮变为收起', rt.footText() === '收起', rt.footText())
 
-    // 6. the count belongs to one visit: coming back starts at the arrival count
+    // 6. one visit, one shape: coming back starts the count over too, and the
+    // folded bands are folded again — only 已完成 arrives open
     rt.inst = rt.remount()
     check('离开再回来回到 15 条', rt.rows() === 15, '实际 ' + rt.rows())
+    check('离开再回来仍只有已完成区展开', bandIsOpen(rt, 'Done')
+      && (!bandHeadButton(rt, '') || !bandIsOpen(rt, ''))
+      && (!bandHeadButton(rt, 'Fav') || !bandIsOpen(rt, 'Fav')), String(bandIsOpen(rt, 'Done')))
 
     click(rt.container.querySelector('.drt-more'))
     await tick()
@@ -1315,9 +1610,14 @@ const harness = String.raw`
     click(entryChrome.row)
     await tick()
     check('点侧栏入口后回到 15 条', rt.rows() === 15, '实际 ' + rt.rows())
+    check('点侧栏入口后仍是只有已完成区展开', bandIsOpen(rt, 'Done') && !bandIsOpen(rt, ''),
+      String(bandIsOpen(rt, '')))
     check('入口重置后仍提示剩余 23', rt.footText().indexOf('23') >= 0, rt.footText())
     entryChrome.remove()
     check('展开数不写本地存储', localStorage.getItem('dsh.recent-tasks.shown.v1') === null, String(localStorage.getItem('dsh.recent-tasks.shown.v1')))
+    check('折叠状态不写本地存储',
+      Object.keys(localStorage).every(key => key.indexOf('dsh.recent-tasks.') !== 0 || key === 'dsh.recent-tasks.folder.v1' || key === 'dsh.recent-tasks.unread.v1' || key === 'dsh.recent-tasks.favorites.v1'),
+      Object.keys(localStorage).join('|'))
     rt.unmount()
     rt.unmount()
 
@@ -1605,6 +1905,9 @@ const harness = String.raw`
     rt = makeRuntime({ running: ['s01'] })
     rt.setPending('s05', 'approval')
     await tick()
+    openBand(rt, '')
+    openBand(rt, 'Done')
+    await tick()
     check('待确认的会话留在正在运行区', rt.lives() === 2 && rt.liveTitles().indexOf('对话 5') >= 0, rt.liveTitles().join('|'))
     check('待确认提示写明一个在等我', rt.chipText() === '待你处理 1', rt.chipText())
     check('待确认卡片带 is-pending 标记', rt.pendingCards() === 1, String(rt.pendingCards()))
@@ -1639,7 +1942,114 @@ const harness = String.raw`
     rt.setPending('s02', 'approval')
     await tick()
     check('全在等我时区块点是琥珀态', rt.headDotClass().indexOf('is-pending') >= 0 && rt.headDotClass().indexOf('is-idle') < 0, rt.headDotClass())
+    openBand(rt, '')
+    await tick()
     check('全在等我时仍然只算一条在运行', rt.zoneCount('') === '1' && rt.lives() === 1, rt.counts().join('|'))
+    rt.unmount()
+
+    // 20c. a visit that lands on someone waiting opens that band by itself
+    // A blocked Session is the one thing on this page that cannot go on without
+    // the person, so the band it sits in must not greet them with a closed
+    // heading. The shape is decided once per visit, off the rows of that visit.
+    localStorage.clear()
+    rt = makeRuntime({ pending: { s02: 'approval' } })
+    await tick()
+    check('有人等着的运行区到达即打开', bandIsOpen(rt, ''), String(bandIsOpen(rt, '')))
+    check('打开的区直接画出那张等着的卡', rt.pendingCards() === 1 && rt.liveTitles()[0] === '对话 2', rt.liveTitles().join('|'))
+    check('打开的区里在跑的也一并画出', rt.lives() === 3, String(rt.lives()))
+    check('自动打开的时刻已完成区照旧是展开的', bandIsOpen(rt, 'Done'), String(bandIsOpen(rt, 'Done')))
+    check('自动打开的区标题仍写着待你处理', rt.chipText() === '待你处理 1', rt.chipText())
+    rt.unmount()
+
+    // 20d. two runs and nobody waiting: the page is still a column of closed
+    // headings, because a run that is merely long is not a run that is stuck
+    localStorage.clear()
+    rt = makeRuntime()
+    await tick()
+    check('只是跑着、没人等着，运行区仍然收着', !bandIsOpen(rt, ''), String(bandIsOpen(rt, '')))
+    check('收着的运行区一张卡都不画', rt.lives() === 0 && rt.zoneCount('') === '2', rt.counts().join('|'))
+    rt.unmount()
+
+    // 20e. a blocked Session that is also starred lives in 收藏, and that is the
+    // band that opens — one session is listed once, so one band answers for it
+    localStorage.clear()
+    localStorage.setItem('dsh.recent-tasks.favorites.v1', JSON.stringify(['s02']))
+    rt = makeRuntime({ pending: { s02: 'plan-review' } })
+    await tick()
+    check('收藏里有人等着，收藏区到达即打开', bandIsOpen(rt, 'Fav'), String(bandIsOpen(rt, 'Fav')))
+    check('收藏区画出那张等着的卡', rt.favorites() === 1 && rt.favoriteTitles().join('|') === '对话 2', rt.favoriteTitles().join('|'))
+    check('收藏里有人等着时运行区不受牵连', !bandIsOpen(rt, ''), String(bandIsOpen(rt, '')))
+    rt.unmount()
+
+    // 20f. both bands can be answering at once — each judges its own rows
+    localStorage.clear()
+    localStorage.setItem('dsh.recent-tasks.favorites.v1', JSON.stringify(['s03']))
+    rt = makeRuntime({ pending: { s02: 'approval', s03: 'question' } })
+    await tick()
+    check('两个区各有人等着就各自打开', bandIsOpen(rt, '') && bandIsOpen(rt, 'Fav'),
+      String(bandIsOpen(rt, '')) + ' / ' + String(bandIsOpen(rt, 'Fav')))
+    rt.unmount()
+
+    // 20g. the decision belongs to the arrival: a Session that starts waiting
+    // while the page is already on screen marks its heading, it does not shove
+    // the cards under the pointer aside
+    localStorage.clear()
+    rt = makeRuntime({})
+    await tick()
+    check('没人在等时到达是收着的', !bandIsOpen(rt, ''), String(bandIsOpen(rt, '')))
+    rt.setPending('s01', 'approval')
+    await tick()
+    check('页面开着时才开始等的，不自己弹开', !bandIsOpen(rt, ''), String(bandIsOpen(rt, '')))
+    check('但标题行立刻写出待你处理', rt.chipText() === '待你处理 1', rt.chipText())
+    check('收着的标题行也写着区里有几条', rt.zoneCount('') === '2', rt.counts().join('|'))
+    click(bandHeadButton(rt, ''))
+    await tick()
+    check('这时点开标题仍能看到那张卡', rt.pendingCards() === 1, String(rt.pendingCards()))
+    rt.unmount()
+
+    // 20h. coming back through the sidebar entry is a new arrival
+    localStorage.clear()
+    rt = makeRuntime({ activePanelId: 'other-panel' })
+    await tick()
+    check('页面开着时先按到达规则收着', !bandIsOpen(rt, ''), String(bandIsOpen(rt, '')))
+    rt.setPending('s02', 'approval')
+    await tick()
+    window.dispatchEvent(new Event('dsh.recent-tasks:entry'))
+    rt.setActive('recent-tasks')
+    await tick()
+    check('点侧栏入口进来时有人等着就打开', bandIsOpen(rt, ''), String(bandIsOpen(rt, '')))
+    check('点侧栏入口进来直接看见那张卡', rt.pendingCards() === 1, String(rt.pendingCards()))
+    rt.unmount()
+
+    // 20i. a remount is a fresh visit too
+    localStorage.clear()
+    rt = makeRuntime({ pending: { s02: 'approval' } })
+    await tick()
+    click(bandHeadButton(rt, ''))
+    await tick()
+    check('先把自动打开的区收回去', !bandIsOpen(rt, ''), String(bandIsOpen(rt, '')))
+    rt.inst = rt.remount()
+    await tick()
+    check('重挂载后按到达规则重新打开', bandIsOpen(rt, ''), String(bandIsOpen(rt, '')))
+    rt.unmount()
+
+    // 20j. 已完成 opens from the table, not from the rows: a blocked Session
+    // belongs to 正在运行 and never lands there, however it is spelled
+    localStorage.clear()
+    rt = makeRuntime({ running: [], pending: { s09: 'approval' } })
+    await tick()
+    check('等着的会话不在已完成里', rt.container.querySelector('.drt-sectionDone') !== null
+      && rt.rowTitles().indexOf('对话 9') < 0, rt.rowTitles().join('|'))
+    check('只有已完成区自己展开', bandIsOpen(rt, 'Done') && rt.rows() === 15, String(rt.rows()))
+    rt.unmount()
+
+    // 20k. the arrival shape is still not remembered
+    localStorage.clear()
+    rt = makeRuntime({ pending: { s02: 'approval' } })
+    await tick()
+    check('自动打开也不写本地存储', localStorage.getItem('dsh.recent-tasks.folder.v1') === null
+      && localStorage.getItem('dsh.recent-tasks.shown.v1') === null,
+      String(localStorage.getItem('dsh.recent-tasks.folder.v1')))
     rt.unmount()
 
     // 21. the sweep button: archive everything older than 7 days, keep the rest
@@ -1788,6 +2198,119 @@ const harness = String.raw`
     check('撤销条只算真正归档的那几条', rt.undoText().indexOf('刚归档 2 个会话') >= 0, rt.undoText())
     rt.unmount()
 
+    // 21h. the 归档 mark on a single 已完成 card: no dialog, one row gone,
+    // the same thirty-second way back
+    localStorage.clear()
+    rt = makeRuntime({})
+    await tick(5)
+    check('已完成每张卡都带归档按钮', rt.archiveMarks().length === rt.rows() && rt.rows() > 0,
+      String(rt.archiveMarks().length) + ' / ' + String(rt.rows()))
+    check('其它区不带归档按钮', rt.lives() === 0
+      && rt.container.querySelectorAll('.drt-card.is-running .drt-archive').length === 0
+      && rt.container.querySelectorAll('.drt-card.is-unread .drt-archive').length === 0)
+    const arcBtn = rt.archiveMarkAt(0)
+    const arcBox = arcBtn.getBoundingClientRect()
+    const arcCard = arcBtn.closest('.drt-card')
+    const arcStar = arcCard.querySelector('.drt-star')
+    const arcStarBox = arcStar.getBoundingClientRect()
+    check('归档按钮点击区 44px', Math.round(arcBox.width) === 44 && Math.round(arcBox.height) === 44,
+      Math.round(arcBox.width) + 'x' + Math.round(arcBox.height))
+    check('归档按钮竖向居中',
+      Math.abs((arcBox.top + arcBox.height / 2) - (arcStarBox.top + arcStarBox.height / 2)) <= 2,
+      Math.round(arcBox.top + arcBox.height / 2) + ' / ' + Math.round(arcStarBox.top + arcStarBox.height / 2))
+    check('归档按钮排在星星左边', arcBox.right <= arcStarBox.left,
+      Math.round(arcBox.right) + ' / ' + Math.round(arcStarBox.left))
+    check('归档按钮不压到标题与说明',
+      arcCard.querySelector('.drt-cardTitle').getBoundingClientRect().right <= arcBox.left
+      && arcCard.querySelector('.drt-cardMeta').getBoundingClientRect().right <= arcBox.left,
+      Math.round(arcCard.querySelector('.drt-cardMeta').getBoundingClientRect().right) + ' / ' + Math.round(arcBox.left))
+    check('归档按钮图标 20px', Math.round(arcBtn.querySelector('svg').getBoundingClientRect().width) === 20,
+      getComputedStyle(arcBtn.querySelector('svg')).width)
+    check('归档图标平时淡着', parseFloat(getComputedStyle(arcBtn).opacity) < 0.5, getComputedStyle(arcBtn).opacity)
+    const firstDoneTitle = rt.rowTitles()[0]
+    const opensBefore = rt.calls.filter(call => call[0] === 'uiWorkspace.openSession').length
+    click(arcBtn)
+    await tick(10)
+    check('点归档不出确认框', rt.dialogText() === '', rt.dialogText())
+    check('点归档不打开会话', rt.calls.filter(call => call[0] === 'uiWorkspace.openSession').length === opensBefore,
+      JSON.stringify(rt.calls.slice(-3)))
+    check('点归档只归档这一张', rt.archivedIds().length === 1, rt.archivedIds().join('|'))
+    check('点归档走的是界面归档接口',
+      rt.calls.filter(call => call[0] === 'uiWorkspace.archiveSession').length === 1,
+      String(rt.calls.filter(call => call[0] === 'uiWorkspace.archiveSession').length))
+    check('归档的那张从列表里消失', rt.titleCount(firstDoneTitle) === 0, firstDoneTitle)
+    check('归档后给出结果提示', rt.noticeText() === '已归档 1 个会话。', rt.noticeText())
+    check('归档后出现撤销条', rt.undoBar() !== null, rt.undoText())
+    check('撤销条说清刚归档一条', rt.undoText().indexOf('刚归档 1 个会话') >= 0, rt.undoText())
+    check('归档后其余已完成卡还在', rt.rows() === 15 && rt.zoneCount('Done') === '37',
+      String(rt.rows()) + ' / ' + rt.zoneCount('Done'))
+    click(rt.undoAction())
+    await tick(15)
+    check('单卡归档也能撤销回去', rt.archivedIds().length === 0, rt.archivedIds().join('|'))
+    check('撤销后那张回到列表', rt.titleCount(firstDoneTitle) === 1, String(rt.titleCount(firstDoneTitle)))
+    check('撤销后说清恢复了几条', rt.noticeText() === '已恢复 1 个会话。', rt.noticeText())
+    rt.unmount()
+
+    // 21i. a second click lands on the same undo slot rather than stacking a
+    // second bar — the way back always points at the last thing archived
+    localStorage.clear()
+    rt = makeRuntime({})
+    await tick(5)
+    click(rt.archiveMarkAt(0))
+    await tick(10)
+    const afterOne = rt.rowTitles()[0]
+    click(rt.archiveMarkAt(0))
+    await tick(10)
+    check('连续归档两张各走一次', rt.archivedIds().length === 2, rt.archivedIds().join('|'))
+    check('撤销条只指最后一次', rt.undoText().indexOf('刚归档 1 个会话') >= 0, rt.undoText())
+    click(rt.undoAction())
+    await tick(15)
+    check('撤销只恢复最后一张', rt.archivedIds().length === 1, rt.archivedIds().join('|'))
+    check('撤销把最后那张放回原位', rt.titleCount(afterOne) === 1, String(rt.titleCount(afterOne)))
+    rt.unmount()
+
+    // 21j. a build without an archive API, and one whose archive refuses: the
+    // card stays put and the reply is the same line the sweep button uses
+    localStorage.clear()
+    rt = makeRuntime({ noArchive: true })
+    await tick(5)
+    check('没有归档接口时按钮照画', rt.archiveMarks().length === rt.rows() && rt.rows() > 0,
+      String(rt.archiveMarks().length))
+    click(rt.archiveMarkAt(0))
+    await tick(10)
+    check('没有归档接口时点它直接说明', rt.noticeText() === '当前界面不支持归档会话。', rt.noticeText())
+    check('没有归档接口时卡片不动', rt.rows() === 15, String(rt.rows()))
+    rt.unmount()
+
+    localStorage.clear()
+    rt = makeRuntime({ archiveFailsAll: true })
+    await tick(5)
+    const keptTitle = rt.rowTitles()[0]
+    click(rt.archiveMarkAt(0))
+    await tick(10)
+    check('归档失败时给出原因', rt.noticeText().indexOf('1 个没能归档：归档服务暂时不可用') >= 0, rt.noticeText())
+    check('归档失败时卡片留在原地', rt.titleCount(keptTitle) === 1 && rt.rows() === 15, String(rt.rows()))
+    check('归档失败时不出撤销条', rt.undoBar() === null, rt.undoText())
+    check('归档失败后按钮可以再点', rt.archiveMarkAt(0).disabled === false,
+      String(rt.archiveMarkAt(0).disabled))
+    rt.unmount()
+
+    // 21k. while one row is being archived every other mark waits, so a stray
+    // second click cannot race the first
+    localStorage.clear()
+    rt = makeRuntime({ archiveDelay: 40 })
+    await tick(5)
+    click(rt.archiveMarkAt(0))
+    await tick(10)
+    check('归档进行中其它按钮先禁用', rt.archiveMarks().every(mark => mark.disabled === true),
+      String(rt.archiveMarks().filter(mark => !mark.disabled).length))
+    check('正在归档的那张自己也在禁用之列', rt.archiveMarks()[0].disabled === true,
+      String(rt.archiveMarks()[0].disabled))
+    await tick(80)
+    check('归档结束后按钮恢复可用', rt.archiveMarks().every(mark => mark.disabled === false),
+      String(rt.archiveMarks().filter(mark => mark.disabled).length))
+    rt.unmount()
+
     // 22. the keep window is read from settings, not baked into the page
     localStorage.clear()
     rt = makeRuntime({ oldSessions: 6, keepDays: 30 })
@@ -1858,6 +2381,116 @@ const harness = String.raw`
       card ? card.textContent : 'null')
     rt.unmount()
 
+    // 24. the sidebar entry: three counts riding beside the glyph
+    // The shell draws that row, so the harness mounts the registered glyph itself.
+    localStorage.clear()
+    disposeAll()
+    rt = makeRuntime({})
+    await tick(5)
+    const entry = rt.renderEntry()
+    await tick(5)
+    check('侧栏入口挂得上', entry !== null && entry.querySelector('svg[data-dsh-panel-entry="recent-tasks"]') !== null,
+      entry ? entry.textContent : 'null')
+    check('默认只有运行中那枚', rt.entryBadges().join('|') === '2', rt.entryBadges().join('|'))
+    check('运行中那枚是浅蓝的', rt.entryBadgeClasses().join('|') === 'drt-entryBadge is-running',
+      rt.entryBadgeClasses().join('|'))
+    check('鼠标停上去说清几个在跑', rt.entryBadgeTitles().join('|') === '2 个正在运行',
+      rt.entryBadgeTitles().join('|'))
+
+    // Where the counts sit: the row is glyph, label, counts — so the pills start
+    // where the label ends, not beside the icon where they used to hang.
+    const landed = rt.entryBoxes()
+    check('药丸排在「最近任务」四个字后面',
+      landed !== null && landed.labelWidth > 0 && landed.badgesLeft >= landed.labelRight,
+      landed === null ? 'null' : landed.badgesLeft.toFixed(1) + ' vs ' + landed.labelRight.toFixed(1))
+    check('药丸没被挤出行尾', landed !== null && landed.badgesRight <= landed.buttonRight,
+      landed === null ? 'null' : landed.badgesRight.toFixed(1) + ' vs ' + landed.buttonRight.toFixed(1))
+
+    // One session starts waiting on the person: a red pill joins, and the run
+    // it belongs to still counts as running, so both numbers move.
+    rt.setPending('s03', 'approval')
+    await tick(200)
+    check('有人等你处理时多一枚红的', rt.entryBadges().join('|') === '1|3', rt.entryBadges().join('|'))
+    check('红的那枚排在前面', rt.entryBadgeClasses()[0] === 'drt-entryBadge is-pending',
+      rt.entryBadgeClasses().join('|'))
+
+    // A run that ended unopened is the news the page exists to deliver.
+    rt.finishRun('s01')
+    await tick(200)
+    check('跑完没看的也有一枚', rt.entryBadges().join('|') === '1|2|1', rt.entryBadges().join('|'))
+    check('没看的那枚是绿的', rt.entryBadgeClasses().join('|') === 'drt-entryBadge is-pending|drt-entryBadge is-running|drt-entryBadge is-unread',
+      rt.entryBadgeClasses().join('|'))
+
+    // The person answers: the red one goes away on its own, and s03 — answered
+    // but never opened — slides over into the unread count beside s01.
+    rt.setPending('s03', undefined)
+    await tick(200)
+    check('处理完红的那枚自己消失', rt.entryBadges().join('|') === '1|2', rt.entryBadges().join('|'))
+
+    // Zero means no pill at all: an idle entry is the plain icon it used to be.
+    disposeAll()
+    localStorage.clear()
+    rt = makeRuntime({ running: [] })
+    await tick(5)
+    rt.renderEntry()
+    await tick(5)
+    check('什么都没在发生时一枚都不挂', rt.entryBadges().length === 0, rt.entryBadges().join('|'))
+    check('一枚都不挂时连药丸容器都不画',
+      rt.entryBadges().length === 0 && document.querySelector('.drt-entryBadges') === null, '')
+
+    // Starred sessions still count: the page moves them out of the running band,
+    // the entry keeps counting them because a run is a run wherever it is listed.
+    disposeAll()
+    localStorage.clear()
+    localStorage.setItem('dsh.recent-tasks.favorites.v1', JSON.stringify(['s07']))
+    rt = makeRuntime({})
+    await tick(5)
+    rt.renderEntry()
+    await tick(200)
+    check('收藏里的在跑也算进角标', rt.entryBadges().join('|') === '2', rt.entryBadges().join('|'))
+    check('页面的运行区只算没收藏的', rt.zoneCount('') === '1', rt.zoneCount(''))
+
+    // The same rule for a run that ended: starred and never opened, the page
+    // files it under 收藏 and its 未读 band stays empty, but the entry still
+    // owes a green pill — the run finished and nobody looked at it.
+    rt.finishRun('s07')
+    await tick(200)
+    check('收藏里没看的也算进未读那枚', rt.entryBadges().join('|') === '1|1', rt.entryBadges().join('|'))
+    // The page has no unread band at all here: the only finished-unopened run is
+    // starred, and 收藏 owns it. The entry's green pill is the only place it shows.
+    check('但页面的未读区不含收藏', rt.zoneCount('Unread') === '' && rt.unreads() === 0,
+      rt.zoneCount('Unread') + '/' + rt.unreads())
+
+    // A collapsed sidebar keeps the 36px glyph only; the pills would not fit.
+    document.body.setAttribute('data-sidebar-collapsed', '')
+    const badgesBox = document.querySelector('.drt-entryBadges')
+    check('侧栏收起时不画角标', badgesBox !== null && getComputedStyle(badgesBox).display === 'none',
+      badgesBox ? getComputedStyle(badgesBox).display : 'null')
+    document.body.removeAttribute('data-sidebar-collapsed')
+    // Away from the page, a star is the only way a session older than the
+    // ten-day window becomes visible at all — and a run is a run, so the entry
+    // has to hear about the star itself.
+    disposeAll()
+    localStorage.clear()
+    rt = makeRuntime({ oldSessions: 5, running: ['o04'] })
+    await tick(5)
+    rt.renderEntry()
+    await tick(200)
+    check('十天以外在跑的，没收藏就不数', rt.entryBadges().length === 0, rt.entryBadges().join('|'))
+    localStorage.setItem('dsh.recent-tasks.favorites.v1', JSON.stringify(['o04']))
+    window.dispatchEvent(new Event('dsh.recent-tasks:favorites'))
+    await tick(200)
+    check('收藏一变，角标当场重算', rt.entryBadges().join('|') === '1', rt.entryBadges().join('|'))
+    localStorage.removeItem('dsh.recent-tasks.favorites.v1')
+    window.dispatchEvent(new Event('dsh.recent-tasks:favorites'))
+    await tick(200)
+    check('取消收藏后那枚又下去', rt.entryBadges().length === 0, rt.entryBadges().join('|'))
+
+    rt.unmount()
+    rt.dispose()
+    disposeAll()
+    localStorage.clear()
+
     const failed = results.filter(line => line.indexOf('FAIL') === 0).length
     document.title = failed === 0 ? 'ALL PASS (' + results.length + ')' : 'FAILED ' + failed + '/' + results.length
     const log = document.getElementById('log')
@@ -1877,7 +2510,7 @@ const html = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <title>harness</title>
-<style>${theme}
+<style>${theme}${shellRow}
 html,body,#stage{height:100%}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif}
 #stage>div{height:100%}

@@ -18,6 +18,8 @@ window.__ModuleLoader__.load({
     const UNREAD_KEY = 'dsh.recent-tasks.unread.v1'
     /** Window event: the remembered unread set changed outside the mounted page. */
     const UNREAD_EVENT = 'dsh.recent-tasks:unread'
+    /** Window event: the remembered favourites changed, so an entry count may shift. */
+    const FAV_EVENT = 'dsh.recent-tasks:favorites'
     /** Browser-local setting: sessions the person starred, drawn as their own band. */
     const FAV_KEY = 'dsh.recent-tasks.favorites.v1'
     /** Activity window required by the entry: sessions touched within this span. */
@@ -41,12 +43,56 @@ window.__ModuleLoader__.load({
     const KEEP_DAYS_FIELD = 'keepDays'
     /** Both spellings the loader may use for this row's id. */
     const ROW_IDS = [ROW_ID, SETTINGS_NS]
+    /**
+     * Which bands start unfolded. 已完成 does: it is the band the person comes
+     * back to tidy up and reopen, so its cards are on the page from the first
+     * frame instead of behind one more click. 正在运行 and 收藏 start folded —
+     * each heading already says how much sits under it, and a blocking Session
+     * opens its band by itself (see `unfoldedOnArrival`), because that is the
+     * one thing on this page that cannot go on without them. 未读 has no key
+     * here on purpose — it is the one band that is never folded, because a run
+     * that finished unopened is the news this page exists to deliver.
+     */
+    const BAND_OPEN_ON_ARRIVAL = { running: false, fav: false, done: true }
+
+    /**
+     * The shape a fresh visit to this page starts with. It is the table above
+     * with one exception read off the rows themselves: a band holding a Session
+     * that is waiting on the person opens itself, because that is the one thing
+     * here that cannot go on without them. 已完成 needs no exception — the table
+     * already opens it.
+     * @param runningRows - rows of 正在运行, blocked ones among them.
+     * @param favoriteRows - rows of 收藏, which can hold a blocked Session too.
+     * @returns a band map, safe to hand to setOpenBands.
+     */
+    function unfoldedOnArrival(runningRows, favoriteRows) {
+      const bands = Object.assign({}, BAND_OPEN_ON_ARRIVAL)
+      if (runningRows.some(row => row.pending !== undefined)) bands.running = true
+      if (favoriteRows.some(row => row.pending !== undefined)) bands.fav = true
+      return bands
+    }
+
     /** Rows shown on arrival; a full page leaves room for more than the short sidebar list. */
     const COLLAPSED_ROWS = 15
     /** Extra rows revealed by one 【展开其余】, so a long history stays scannable. */
     const STEP_ROWS = 10
     /** How often the relative timestamps are recomputed. */
     const CLOCK_TICK_MS = 60 * 1000
+    /**
+     * A streaming run republishes its status many times a second; one count per
+     * beat is as fast as a 9px pill can be read, and it bounds the work.
+     */
+    const ENTRY_BADGE_COALESCE_MS = 120
+    /** The ten-day window slides on its own; this slow pass lets a count age out. */
+    const ENTRY_BADGE_SWEEP_MS = 60 * 1000
+    /**
+     * How long the sidebar entry waits before it believes the status service is
+     * never coming. The service can arrive after activation, the same reason the
+     * unread watch retries it; the entry has no page to fall back on meanwhile.
+     */
+    const ENTRY_STATUS_RETRY_MS = 500
+    /** That retry stops here: ten minutes of a service that never arrived. */
+    const ENTRY_STATUS_RETRIES = 1200
     const MINUTE_MS = 60 * 1000
     const HOUR_MS = 60 * MINUTE_MS
     const DAY_MS = 24 * HOUR_MS
@@ -131,12 +177,18 @@ window.__ModuleLoader__.load({
       'status.unread': '未读',
       'status.done': '已完成',
       'section.pendingChip': '待你处理 {n}',
+      'section.fold': '收起这一区',
+      'section.unfold': '展开这一区',
+      'entry.badgePending': '{n} 个等你处理',
+      'entry.badgeRunning': '{n} 个正在运行',
+      'entry.badgeUnread': '{n} 个跑完了没看',
       'pending.approval': '等你确认',
       'pending.planReview': '等你定方案',
       'pending.question': '等你回答',
       'pending.other': '等你处理',
       'star.add': '收藏这个对话',
       'star.remove': '取消收藏',
+      'archive.add': '归档这个对话',
       'row.unknownWorkspace': '未记录工作区',
       'chooser.title': '选择文件夹',
       'chooser.hint': '新建的会话会使用这个文件夹，之后点【+】会直接用它。',
@@ -206,12 +258,18 @@ window.__ModuleLoader__.load({
       'status.unread': 'Unread',
       'status.done': 'Completed',
       'section.pendingChip': '{n} waiting on you',
+      'section.fold': 'Collapse this band',
+      'section.unfold': 'Expand this band',
+      'entry.badgePending': '{n} waiting on you',
+      'entry.badgeRunning': '{n} running',
+      'entry.badgeUnread': '{n} finished unread',
       'pending.approval': 'Needs approval',
       'pending.planReview': 'Review the plan',
       'pending.question': 'Answer needed',
       'pending.other': 'Needs you',
       'star.add': 'Star this session',
       'star.remove': 'Remove from favorites',
+      'archive.add': 'Archive this session',
       'row.unknownWorkspace': 'Workspace not recorded',
       'chooser.title': 'Choose a folder',
       'chooser.hint': 'New sessions start in this folder, and 【+】 reuses it next time.',
@@ -289,12 +347,46 @@ window.__ModuleLoader__.load({
       '.drt-headDot.is-unread{background:var(--drt-unread-dot);opacity:1;animation:none}',
       '.drt-headDot.is-fav{background:var(--dsw-alias-state-warn-primary);opacity:1;animation:none}',
       '.drt-sectionHead{flex:none;display:flex;align-items:center;gap:7px;min-width:0}',
+      // A heading that folds is a button, so it has to lose the button look and
+      // keep the plain row it used to be — then take the whole row as its target.
+      '.drt-sectionHeadButton{width:100%;box-sizing:border-box;margin:0;padding:2px 4px 2px 2px;border:none;border-radius:7px;background:transparent;color:inherit;font-family:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .12s ease}',
+      '.drt-sectionHeadButton:hover{background:var(--dsw-alias-interactive-bg-hover)}',
+      '.drt-sectionHeadButton:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}',
+      '.drt-sectionHeadButton .drt-zoneLabel{flex:none}',
+      // The chevron is the only thing that moves; it points right while the band
+      // is closed and turns down once it opens.
+      '.drt-chevron{flex:none;width:7px;height:7px;margin-left:1px;border-right:1.4px solid var(--dsw-alias-label-tertiary);border-bottom:1.4px solid var(--dsw-alias-label-tertiary);transform:rotate(-45deg);transition:transform .16s ease;opacity:.75}',
+      '.drt-sectionHeadButton.is-open .drt-chevron{transform:rotate(45deg)}',
+      // A closed band gives its room back: 已完成 must stop claiming the leftover
+      // height, or the page would keep a hole where its cards used to be.
+      '.drt-section.is-folded{flex:none}',
       '.drt-headDot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--drt-run);animation:drt-breathe 1.8s ease-in-out infinite}',
       '.drt-headDot.is-idle{background:var(--dsw-alias-label-tertiary);opacity:.45;animation:none}',
       '.drt-headDot.is-pending{background:var(--dsw-alias-state-error-primary);opacity:1;animation:drt-pause 2.6s ease-in-out infinite}',
       '.drt-chip{flex:none;display:inline-flex;align-items:center;height:19px;padding:0 8px;border-radius:10px;background:color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);color:var(--dsw-alias-state-error-primary);font-size:11.5px;font-weight:600;line-height:1;white-space:nowrap}',
       '.drt-zoneLabel{font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--dsw-alias-label-secondary)}',
       '.drt-count{flex:none;min-width:19px;height:19px;box-sizing:border-box;padding:0 6px;border-radius:10px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary);font-size:11.5px;line-height:19px;text-align:center;font-variant-numeric:tabular-nums}',
+      // The sidebar row belongs to the shell, so the only seat this plugin has
+      // there is its own glyph. Both wrappers step out of the way — the shell's
+      // glyph span and this plugin's own one — so the icon, the row's label and
+      // the counts read as three siblings in the row's flex line; the counts are
+      // ordered after the label, which is where the eye already is. Nothing is
+      // positioned by hand: the row's own padding keeps the pills clear of the
+      // unpin button, and a narrow row truncates the label first.
+      '.drt-entry{display:contents}',
+      'button:has([data-dsh-panel-entry="recent-tasks"]) > span:first-child{display:contents}',
+      'button:has([data-dsh-panel-entry="recent-tasks"]) > span:first-child > svg{flex:none}',
+      'button:has([data-dsh-panel-entry="recent-tasks"]) > span:last-child{flex:0 1 auto;min-width:0}',
+      '.drt-entryBadges{flex:0 0 auto;order:2;display:inline-flex;align-items:center;gap:2px;margin-inline-start:1px}',
+      '.drt-entryBadge{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:13px;height:13px;box-sizing:border-box;padding:0 3px;border-radius:6.5px;font-size:9px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}',
+      // Each pill is its band's colour held at a fifth strength behind the same
+      // colour for the digit: readable at 9px without shouting from the sidebar.
+      '.drt-entryBadge.is-pending{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 20%,transparent);color:var(--dsw-alias-state-error-primary)}',
+      '.drt-entryBadge.is-running{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 20%,transparent);color:var(--dsw-alias-state-business-primary)}',
+      '.drt-entryBadge.is-unread{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 20%,transparent);color:var(--dsw-alias-state-success-primary)}',
+      // A collapsed sidebar keeps a 36px row for the icon alone: the counts
+      // would spill out of it, so they stand down with the name.
+      '[data-sidebar-collapsed] .drt-entryBadges{display:none}',
       '.drt-cardGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));align-content:start;gap:12px;min-width:0;padding:4px 3px 6px;scrollbar-gutter:stable}',
       // Three columns is the ceiling: on a wide window the cards should keep
       // their new size instead of multiplying back into thin strips.
@@ -343,6 +435,20 @@ window.__ModuleLoader__.load({
       '.drt-star.is-on svg{filter:drop-shadow(0 2px 5px color-mix(in srgb, var(--dsw-alias-state-warn-primary) 46%, transparent))}',
       '.drt-card:hover .drt-star{opacity:.6}',
       '.drt-card:hover .drt-star.is-on{opacity:1}',
+      // 已完成 cards carry a second mark beside the star: 归档. It sits just
+      // left of the star, same 44px hit area, same quiet rest state, so the
+      // right edge reads as a small rail of two marks rather than buttons. The
+      // card buys the room with padding, so no title ever runs under them.
+      '.drt-card.has-archive{padding-right:108px}',
+      '.drt-archive{position:absolute;top:50%;right:64px;transform:translateY(-50%);z-index:2;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:none;border-radius:50%;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;opacity:.4;transition:opacity .16s ease,color .16s ease,background-color .16s ease}',
+      '.drt-archive svg{width:20px;height:20px;transition:transform .18s cubic-bezier(.34,1.56,.64,1)}',
+      '.drt-archive:hover:not(:disabled){opacity:1;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}',
+      '.drt-archive:hover:not(:disabled) svg{transform:translateY(-1px)}',
+      '.drt-archive:focus-visible{opacity:1;outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-4px}',
+      '.drt-archive:disabled{cursor:default}',
+      '.drt-archive.is-busy{opacity:.9;animation:drt-breathe 1.2s ease-in-out infinite}',
+      '.drt-card:hover .drt-archive{opacity:.6}',
+      '.drt-card:hover .drt-archive:disabled{opacity:.3}',
       '.drt-star.is-on svg{animation:drt-star-pop .3s cubic-bezier(.34,1.56,.64,1)}',
       '.drt-card.is-fav{animation:drt-fav-in .22s cubic-bezier(.22,1,.36,1)}',
       '@keyframes drt-star-pop{0%{transform:scale(.7)}60%{transform:scale(1.16)}100%{transform:scale(1)}}',
@@ -371,7 +477,7 @@ window.__ModuleLoader__.load({
       '@property --drt-angle{syntax:"<angle>";inherits:false;initial-value:0deg}',
       '@keyframes drt-spin{to{--drt-angle:1turn}}',
       '@keyframes drt-sheen{0%{transform:translateX(-110%)}55%,100%{transform:translateX(230%)}}',
-      '@media (prefers-reduced-motion:reduce){.drt-card.is-running,.drt-card.is-running::before,.drt-card.is-running::after{animation:none}.drt-headDot,.drt-cardDot,.drt-star.is-on svg,.drt-card.is-fav{animation:none}.drt-card,.drt-star,.drt-star svg{transition:none}.drt-card:hover,.drt-card:active,.drt-star:hover,.drt-star:hover svg{transform:none}}',
+      '@media (prefers-reduced-motion:reduce){.drt-card.is-running,.drt-card.is-running::before,.drt-card.is-running::after{animation:none}.drt-headDot,.drt-cardDot,.drt-star.is-on svg,.drt-card.is-fav{animation:none}.drt-card,.drt-star,.drt-star svg,.drt-sectionHeadButton,.drt-chevron{transition:none}.drt-card:hover,.drt-card:active,.drt-star:hover,.drt-star:hover svg{transform:none}}',
       '.drt-empty{margin:0;padding:8px 2px;font-size:13px;line-height:1.6;color:var(--dsw-alias-label-tertiary)}',
       '.drt-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.36)}',
       '.drt-dialog{display:flex;flex-direction:column;width:min(460px,100%);max-height:min(560px,78vh);overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:14px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.3)}',
@@ -511,6 +617,17 @@ window.__ModuleLoader__.load({
       try {
         if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
           window.dispatchEvent(new Event(UNREAD_EVENT))
+        }
+      } catch {
+        /* an environment without events keeps the last render */
+      }
+    }
+
+    /** Tell the sidebar entry that the starred set moved, without re-reading it here. */
+    function notifyFavorites() {
+      try {
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+          window.dispatchEvent(new Event(FAV_EVENT))
         }
       } catch {
         /* an environment without events keeps the last render */
@@ -986,23 +1103,240 @@ window.__ModuleLoader__.load({
       return result
     }
 
-    /** Sidebar glyph; the shell owns the button, so this only paints the icon. */
+    /** The entry at rest: nothing waiting, nothing running, nothing to catch up on. */
+    const ENTRY_AT_REST = { pending: 0, running: 0, unread: 0 }
+
+    /**
+     * The three counts the sidebar entry carries beside its glyph.
+     *
+     * The shell draws that row itself — button, label, tooltip — and re-reads a
+     * slot's label only when the slot ledger or the locale changes, so a number
+     * folded into the name would freeze at whatever it said when it registered.
+     * The glyph is the one node this plugin owns there, so the counts ride next
+     * to it instead, on a snapshot the entry's own render can subscribe to.
+     *
+     * The counts are the page's own: same ten-day window, same subagent and
+     * archive rules, same "starred sessions still count" answer, because they
+     * come out of `projectRows` rather than a second definition of the list.
+     *
+     * @returns `{ getSnapshot, subscribe, watch }` — watch starts the tracking
+     *   and returns its disposer.
+     */
+    function createEntryBadge() {
+      let snapshot = ENTRY_AT_REST
+      const listeners = new Set()
+      const publish = next => {
+        if (next.pending === snapshot.pending && next.running === snapshot.running && next.unread === snapshot.unread) return
+        snapshot = next
+        for (const listener of Array.from(listeners)) {
+          try {
+            listener()
+          } catch {
+            /* a closed view must not stop the count */
+          }
+        }
+      }
+      return {
+        getSnapshot: () => snapshot,
+        subscribe(listener) {
+          listeners.add(listener)
+          return () => {
+            listeners.delete(listener)
+          }
+        },
+        /**
+         * Track the session list, the status map and the remembered sets from
+         * activation on, so a collapsed sidebar still answers "有几个在跑、几个
+         * 在等我" without opening the page.
+         * @param ctx - client root context.
+         * @returns disposer that stops the watch.
+         */
+        watch(ctx) {
+          let disposed = false
+          let coalescer = null
+          let retry = null
+          const stops = []
+
+          const read = () => {
+            if (disposed) return
+            let listState
+            let workspaceState
+            let statusState
+            try {
+              const sessions = ctx.get('sessions')
+              listState = sessions && sessions.list && typeof sessions.list.getSnapshot === 'function'
+                ? sessions.list.getSnapshot()
+                : undefined
+            } catch {
+              listState = undefined
+            }
+            if (!listState || !listState.byId) return
+            try {
+              const workspaces = ctx.get('workspaces')
+              workspaceState = workspaces && workspaces.list && typeof workspaces.list.getSnapshot === 'function'
+                ? workspaces.list.getSnapshot()
+                : undefined
+            } catch {
+              workspaceState = undefined
+            }
+            try {
+              const uiSession = ctx.get('uiSession')
+              statusState = uiSession && uiSession.sessionStatus && typeof uiSession.sessionStatus.getSnapshot === 'function'
+                ? uiSession.sessionStatus.getSnapshot()
+                : undefined
+            } catch {
+              statusState = undefined
+            }
+            const rows = projectRows(listState, workspaceState, statusState, readUnread(), readFavorites(), Date.now(), translateKey)
+            let pending = 0
+            let running = 0
+            let unread = 0
+            for (const row of rows) {
+              if (row.running === true) running += 1
+              if (row.pending !== undefined) pending += 1
+              if (row.unread === true) unread += 1
+            }
+            publish({ pending, running, unread })
+          }
+
+          // A streaming run republishes its status far more often than a 9px
+          // pill can change; one pass per tick keeps the count honest and the
+          // work bounded.
+          const schedule = () => {
+            if (disposed || coalescer !== null) return
+            coalescer = setTimeout(() => {
+              coalescer = null
+              read()
+            }, ENTRY_BADGE_COALESCE_MS)
+          }
+
+          const bind = source => {
+            if (!source || typeof source.subscribe !== 'function') return
+            const stop = source.subscribe(schedule)
+            if (typeof stop === 'function') stops.push(stop)
+          }
+
+          const attachServices = () => {
+            if (disposed) return
+            try {
+              const sessions = ctx.get('sessions')
+              const workspaces = ctx.get('workspaces')
+              bind(sessions ? sessions.list : undefined)
+              bind(workspaces ? workspaces.list : undefined)
+            } catch {
+              /* the services arrive with the shell; the retry below tries again */
+            }
+            read()
+          }
+
+          // uiSession can land after activation, the same way the unread watch
+          // waits for it; meanwhile the list watch keeps the counts moving.
+          let tries = 0
+          const attachStatus = () => {
+            if (disposed) return
+            let status
+            try {
+              const uiSession = ctx.get('uiSession')
+              status = uiSession ? uiSession.sessionStatus : undefined
+            } catch {
+              status = undefined
+            }
+            if (status && typeof status.subscribe === 'function') {
+              bind(status)
+              read()
+              return
+            }
+            tries += 1
+            if (tries < ENTRY_STATUS_RETRIES) retry = setTimeout(attachStatus, ENTRY_STATUS_RETRY_MS)
+          }
+
+          // The starred and unread sets live in localStorage, and the page
+          // announces its own writes instead of hiding them behind a service.
+          const onRemembered = () => schedule()
+          const listen = typeof window !== 'undefined' && typeof window.addEventListener === 'function'
+          if (listen) {
+            window.addEventListener(UNREAD_EVENT, onRemembered)
+            window.addEventListener(FAV_EVENT, onRemembered)
+            window.addEventListener('storage', onRemembered)
+          }
+          // The ten-day window slides on its own; a slow pass keeps a band from
+          // staying counted after its last row aged out.
+          const sweep = setInterval(read, ENTRY_BADGE_SWEEP_MS)
+
+          attachServices()
+          attachStatus()
+          return () => {
+            disposed = true
+            clearInterval(sweep)
+            if (coalescer !== null) clearTimeout(coalescer)
+            if (retry !== null) clearTimeout(retry)
+            if (listen) {
+              window.removeEventListener(UNREAD_EVENT, onRemembered)
+              window.removeEventListener(FAV_EVENT, onRemembered)
+              window.removeEventListener('storage', onRemembered)
+            }
+            for (const stop of stops) {
+              try {
+                stop()
+              } catch {
+                /* the watch is going away anyway */
+              }
+            }
+          }
+        },
+      }
+    }
+
+    /** The sidebar entry's counts; one badge per plugin instance, read by its glyph. */
+    const entryBadge = createEntryBadge()
+
+    /**
+     * Sidebar glyph; the shell owns the button, so this only paints the icon and
+     * the three counts that belong beside it. A state with nothing in it draws
+     * no pill, so an idle entry looks exactly like the plain icon it used to be.
+     */
     function PanelGlyph(props) {
       const size = typeof props.size === 'number' ? props.size : 16
-      return h('svg', {
-        viewBox: '0 0 16 16',
-        width: size,
-        height: size,
-        fill: 'none',
-        stroke: 'currentColor',
-        strokeWidth: 1.3,
-        strokeLinecap: 'round',
-        strokeLinejoin: 'round',
-        'aria-hidden': 'true',
-        'data-dsh-panel-entry': PANEL_ID,
-      },
-        h('circle', { cx: 8, cy: 8, r: 5.4 }),
-        h('path', { d: 'M8 5.1v3.2l2.2 1.35' }),
+      const counts = useObservable(entryBadge) || ENTRY_AT_REST
+      const pills = []
+      if (counts.pending > 0) {
+        pills.push(h('span', {
+          key: 'pending',
+          className: 'drt-entryBadge is-pending',
+          title: translateKey('entry.badgePending', { n: counts.pending }),
+        }, counts.pending))
+      }
+      if (counts.running > 0) {
+        pills.push(h('span', {
+          key: 'running',
+          className: 'drt-entryBadge is-running',
+          title: translateKey('entry.badgeRunning', { n: counts.running }),
+        }, counts.running))
+      }
+      if (counts.unread > 0) {
+        pills.push(h('span', {
+          key: 'unread',
+          className: 'drt-entryBadge is-unread',
+          title: translateKey('entry.badgeUnread', { n: counts.unread }),
+        }, counts.unread))
+      }
+      return h('span', { className: 'drt-entry' },
+        h('svg', {
+          viewBox: '0 0 16 16',
+          width: size,
+          height: size,
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.3,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'aria-hidden': 'true',
+          'data-dsh-panel-entry': PANEL_ID,
+        },
+          h('circle', { cx: 8, cy: 8, r: 5.4 }),
+          h('path', { d: 'M8 5.1v3.2l2.2 1.35' }),
+        ),
+        pills.length === 0 ? null : h('span', { className: 'drt-entryBadges' }, pills),
       )
     }
 
@@ -1161,6 +1495,9 @@ window.__ModuleLoader__.load({
       // taken back. It names no timer of its own — the clock tick re-reads it.
       const [undo, setUndo] = React.useState(null)
       const [undoing, setUndoing] = React.useState(false)
+      // Which card is being archived right now, so its own button can show the
+      // press and a second click on another card cannot start a second move.
+      const [archiving, setArchiving] = React.useState(null)
 
       const favoriteSet = React.useMemo(() => new Set(favoriteIds), [favoriteIds])
       const rows = React.useMemo(
@@ -1188,6 +1525,27 @@ window.__ModuleLoader__.load({
       const visible = doneRows.slice(0, shown)
       const remaining = doneRows.length - shown
 
+      // How the bands are laid out for this visit. 未读 is not in the map: it is
+      // the one band that is never folded. The table says every band starts
+      // folded; the exception is read off the rows themselves.
+      const arrivalBands = unfoldedOnArrival(runningRows, favoriteRows)
+      const [openBands, setOpenBands] = React.useState(() => arrivalBands)
+      // The arrival shape is re-read on every commit, because the entry's click
+      // reaches a listener registered once: it has to judge the rows of that
+      // moment, not the rows of the first render. `ready` separates "no band is
+      // waiting" from "the list has not landed yet" — an empty first render is
+      // not a shape, so the visit stays undecided until the rows arrive, and
+      // once it is decided it is not decided again: a Session that starts
+      // waiting while the page is open only marks its heading.
+      const arrival = React.useRef({ bands: arrivalBands, ready: rows.length > 0 })
+      const arrivalSettled = React.useRef(rows.length > 0)
+      React.useEffect(() => {
+        arrival.current = { bands: arrivalBands, ready: rows.length > 0 }
+        if (arrivalSettled.current || rows.length === 0) return
+        arrivalSettled.current = true
+        setOpenBands(arrivalBands)
+      })
+
       // The remembered unread set is owned by the activation-level watch, which
       // also sees runs finishing while this page is closed. The page renders it
       // and re-reads it whenever that watch changes it.
@@ -1204,26 +1562,39 @@ window.__ModuleLoader__.load({
 
       /** Star or unstar one session; every band reads the same set, so all stay in step. */
       const toggleFavorite = id => {
-        setFavoriteIds(previous => {
-          const next = previous.indexOf(id) === -1
-            ? [id].concat(previous)
-            : previous.filter(value => value !== id)
-          writeFavorites(next)
-          return next
-        })
+        const next = favoriteIds.indexOf(id) === -1
+          ? [id].concat(favoriteIds)
+          : favoriteIds.filter(value => value !== id)
+        writeFavorites(next)
+        setFavoriteIds(next)
+        // The entry counts starred runs too; it reads the set, so tell it the
+        // set moved rather than wait for the next status batch.
+        notifyFavorites()
       }
 
       // The list belongs to one visit: every arrival starts from the first rows.
       // A page still mounted while another panel is on screen hears the entry's
-      // click, so leaving by another row and coming back also starts over.
+      // click, so leaving by another row and coming back also starts over. The
+      // bands come back with it — one visit, one shape, nothing remembered —
+      // and that one shape is the arrival shape, not a column of closed
+      // headings: a band that is waiting on the person opens itself.
       React.useEffect(() => {
         if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
           return undefined
         }
-        const reset = () => setShown(COLLAPSED_ROWS)
+        const reset = () => {
+          setShown(COLLAPSED_ROWS)
+          setOpenBands(arrival.current.bands)
+          arrivalSettled.current = arrival.current.ready
+        }
         window.addEventListener(ROWS_RESET_EVENT, reset)
         return () => window.removeEventListener(ROWS_RESET_EVENT, reset)
       }, [])
+
+      /** Fold or unfold one band. Its heading keeps naming the band and its count. */
+      const toggleBand = band => {
+        setOpenBands(previous => Object.assign({}, previous, { [band]: !previous[band] }))
+      }
 
       const leave = () => {
         try {
@@ -1525,6 +1896,35 @@ window.__ModuleLoader__.load({
           : { tone: 'error', text: t('sweep.undoFailed', { n: failed, message }) })
       }
 
+      /**
+       * Moves one card's Session into the archive. No confirm step: the offer to
+       * put it back lands in the same bar the sweep uses, so a stray click costs
+       * one click to undo, not a dialog every time. Errors land in the notice
+       * instead of the console — the card stays put when the service refuses.
+       * @param row - the card's row.
+       */
+      const archiveRow = async row => {
+        if (archiving !== null) return
+        if (!canArchive()) {
+          setNotice({ tone: 'error', text: t('sweep.unavailable') })
+          return
+        }
+        setArchiving(row.id)
+        try {
+          await archiveOne(row.id)
+          // Replacing, not extending, the batch: the bar always names the
+          // archive that can still be undone, and one offer is the contract.
+          setUndo(canUnarchive()
+            ? { ids: [row.id], until: Date.now() + UNDO_WINDOW_MS }
+            : null)
+          setNotice({ tone: 'success', text: t('sweep.done', { n: 1 }) })
+        } catch (error) {
+          setNotice({ tone: 'error', text: t('sweep.failed', { n: 1, message: messageOf(error) }) })
+        } finally {
+          setArchiving(null)
+        }
+      }
+
       // The offer dies on the clock, not on a click: once the last second is
       // spent the bar goes away even if the person is looking elsewhere. A run
       // already under way keeps its bar until it reports back.
@@ -1581,15 +1981,20 @@ window.__ModuleLoader__.load({
 
       // One card shape for every band; only the tone changes. A div rather than
       // a button because the star lives inside it and buttons must not nest.
+      // 已完成 cards also carry an archive mark: the one place a person can
+      // clear a single session without a sweep dialog.
       const card = (row, tone) => {
         const favorite = row.favorite === true
         const starLabel = favorite ? t('star.remove') : t('star.add')
         const blocked = row.pending !== undefined && tone === 'running'
+        const archivable = tone === 'done'
+        const archivingThis = archiving === row.id
         return h('div', {
           key: row.id,
           role: 'button',
           tabIndex: 0,
-          className: 'drt-card is-' + tone + (blocked ? ' is-pending' : ''),
+          className: 'drt-card is-' + tone + (blocked ? ' is-pending' : '')
+            + (archivable ? ' has-archive' : ''),
           onClick: () => openRow(row),
           onKeyDown: event => {
             if (event.target !== event.currentTarget) return
@@ -1614,6 +2019,36 @@ window.__ModuleLoader__.load({
             h('span', { className: 'drt-cardTitle' }, row.title),
           ),
           cardMeta(row, tone),
+          archivable
+            ? h('button', {
+              type: 'button',
+              className: 'drt-archive' + (archivingThis ? ' is-busy' : ''),
+              'aria-label': t('archive.add'),
+              title: t('archive.add'),
+              disabled: archiving !== null,
+              onClick: event => {
+                event.stopPropagation()
+                void archiveRow(row)
+              },
+            },
+              h('svg', {
+                viewBox: '0 0 20 20',
+                'aria-hidden': 'true',
+                focusable: 'false',
+              },
+                h('path', {
+                  // A box with its lid: the mark every archive uses, so the
+                  // button says "put away", not "delete".
+                  d: 'M3.2 5.4h13.6M4.6 5.4v9.2a1.4 1.4 0 0 0 1.4 1.4h8a1.4 1.4 0 0 0 1.4-1.4V5.4M8 9.2h4',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: 1.5,
+                  strokeLinecap: 'round',
+                  strokeLinejoin: 'round',
+                }),
+              ),
+            )
+            : null,
           h('button', {
             type: 'button',
             className: 'drt-star' + (favorite ? ' is-on' : ''),
@@ -1645,37 +2080,63 @@ window.__ModuleLoader__.load({
       // Every band is drawn only while it holds a card: an empty band keeps a
       // header and a "nothing here" line on screen, which reads as if its
       // sessions had gone missing. A band that is not drawn leaves no gap.
+      //
+      // A heading is also the fold control: the whole row toggles its band, and
+      // the chevron on its right edge says which way it will go. The heading
+      // keeps its count — and its red 待你处理 chip — while folded, so a closed
+      // band still answers "how much is in there, and does any of it need me".
+
+      /** A foldable heading. 未读 never takes this one: it cannot close. */
+      const bandHead = (band, dotClass, label, count, extra) => {
+        const open = openBands[band] === true
+        return h('button', {
+          type: 'button',
+          className: 'drt-sectionHead drt-sectionHeadButton' + (open ? ' is-open' : ''),
+          'aria-expanded': open ? 'true' : 'false',
+          title: t(open ? 'section.fold' : 'section.unfold'),
+          onClick: () => toggleBand(band),
+        },
+          h('span', { className: dotClass, 'aria-hidden': 'true' }),
+          h('span', { className: 'drt-zoneLabel' }, label),
+          h('span', { className: 'drt-count' }, count),
+          extra,
+          h('span', { className: 'drt-chevron', 'aria-hidden': 'true' }),
+        )
+      }
+
+      const runningOpen = openBands.running === true
       const runningSection = runningRows.length === 0
         ? null
-        : h('section', { className: 'drt-section drt-sectionRunning' },
-          h('div', { className: 'drt-sectionHead' },
-            h('span', {
-              className: 'drt-headDot' + (liveRows.length === 0 ? ' is-pending' : ''),
-              'aria-hidden': 'true',
-            }),
-            h('span', { className: 'drt-zoneLabel' }, t('section.running')),
-            h('span', { className: 'drt-count' }, runningRows.length),
+        : h('section', { className: 'drt-section drt-sectionRunning' + (runningOpen ? '' : ' is-folded') },
+          bandHead(
+            'running',
+            'drt-headDot' + (liveRows.length === 0 ? ' is-pending' : ''),
+            t('section.running'),
+            runningRows.length,
             pendingRows.length === 0
               ? null
               : h('span', { className: 'drt-chip' }, t('section.pendingChip', { n: pendingRows.length })),
           ),
-          h('div', { className: 'drt-cardGrid is-running' }, pendingRows.concat(liveRows).map(row => card(row, 'running'))),
+          runningOpen
+            ? h('div', { className: 'drt-cardGrid is-running' }, pendingRows.concat(liveRows).map(row => card(row, 'running')))
+            : null,
         )
 
       // 收藏 sits directly under the running band: a star lands there first.
       // It only takes room while it holds something — an empty band wedged
       // between two live bands reads as if a session went missing.
+      const favoriteOpen = openBands.fav === true
       const favoriteSection = favoriteRows.length === 0
         ? null
-        : h('section', { className: 'drt-section drt-sectionFav' },
-          h('div', { className: 'drt-sectionHead' },
-            h('span', { className: 'drt-headDot is-fav', 'aria-hidden': 'true' }),
-            h('span', { className: 'drt-zoneLabel' }, t('section.fav')),
-            h('span', { className: 'drt-count' }, favoriteRows.length),
-          ),
-          h('div', { className: 'drt-cardGrid is-fav' }, favoriteRows.map(row => card(row, 'fav'))),
+        : h('section', { className: 'drt-section drt-sectionFav' + (favoriteOpen ? '' : ' is-folded') },
+          bandHead('fav', 'drt-headDot is-fav', t('section.fav'), favoriteRows.length, null),
+          favoriteOpen
+            ? h('div', { className: 'drt-cardGrid is-fav' }, favoriteRows.map(row => card(row, 'fav')))
+            : null,
         )
 
+      // The one band that is always open: a run that finished unopened is the
+      // news this page exists to deliver, and folding it would hide the news.
       const unreadSection = unreadRows.length === 0
         ? null
         : h('section', { className: 'drt-section drt-sectionUnread' },
@@ -1687,16 +2148,15 @@ window.__ModuleLoader__.load({
           h('div', { className: 'drt-cardGrid is-unread' }, unreadRows.map(row => card(row, 'unread'))),
         )
 
+      const doneOpen = openBands.done === true
       const doneSection = doneRows.length === 0
         ? null
-        : h('section', { className: 'drt-section drt-sectionDone' },
-          h('div', { className: 'drt-sectionHead' },
-            h('span', { className: 'drt-headDot is-idle', 'aria-hidden': 'true' }),
-            h('span', { className: 'drt-zoneLabel' }, t('section.done')),
-            h('span', { className: 'drt-count' }, doneRows.length),
-          ),
-          h('div', { className: 'drt-cardGrid is-done' }, visible.map(row => card(row, 'done'))),
-          foot,
+        : h('section', { className: 'drt-section drt-sectionDone' + (doneOpen ? '' : ' is-folded') },
+          bandHead('done', 'drt-headDot is-idle', t('section.done'), doneRows.length, null),
+          doneOpen
+            ? h('div', { className: 'drt-cardGrid is-done' }, visible.map(row => card(row, 'done')))
+            : null,
+          doneOpen ? foot : null,
         )
 
       let body = null
@@ -2270,6 +2730,9 @@ window.__ModuleLoader__.load({
         // The entry refreshes the running code before it opens the page, and the
         // page comes back by itself after the rebuild that press started.
         ctx.effect(() => watchUnread(ctx), 'recent-tasks: unread watch')
+        // The entry's counts run from activation, not from opening the page: the
+        // sidebar row is the one place the numbers are read without a click.
+        ctx.effect(() => entryBadge.watch(ctx), 'recent-tasks: entry counts')
         ctx.effect(() => installRefreshBridge(ctx), 'recent-tasks: entry refresh')
         ctx.effect(() => restorePageAfterRefresh(ctx), 'recent-tasks: reopen after refresh')
       },
